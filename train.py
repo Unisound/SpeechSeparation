@@ -14,7 +14,6 @@ import os
 import sys
 import time
 
-import librosa
 import logging
 import numpy as np
 import tensorflow as tf
@@ -384,10 +383,6 @@ def create_gen_wav_para(net):
 
     return infe_para
 
-def write_wav(waveform, sample_rate, filename):
-  y = np.array(waveform)
-  librosa.output.write_wav(filename, y, sample_rate)
-  print('Updated wav file at {}'.format(filename))
 
 def main():
     args = get_arguments()
