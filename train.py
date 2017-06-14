@@ -18,10 +18,8 @@ import logging
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import timeline
-#import tensorflow.contrib.mpi as mpi
 import ctypes
 import scipy
-#ctypes.CDLL("libmpi.so", mode=ctypes.RTLD_GLOBAL)
 
 def _debug_print_func(val):
     print (val.shape)
@@ -430,11 +428,10 @@ def main():
     global_step = tf.get_variable('global_step', 
 		[], initializer = tf.constant_initializer(0), trainable=False)
 
-#train_step = tf.train.AdamOptimizer(learning_rate).minimize(cost, aggregation_method = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
+
     optim = optimizer_factory[args.optimizer](
                     learning_rate=args.learning_rate,
                     momentum=args.momentum)
-    #optim = mpi.DistributedOptimizer(optim)
     tower_grads = []
     losses = []
     speech_inputs_mix = []
@@ -472,9 +469,9 @@ def main():
       train_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
       final_big_frame_state.append(net.cell.zero_state(net.batch_size, tf.float32))
       final_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
+    
     with tf.variable_scope(tf.get_variable_scope()):
       for i in xrange(args.num_gpus):
-        #sys.stdout.write("FLAGS.num_gpus:",FLAGS.num_gpus)
         with tf.device('/gpu:%d' % i):
           with tf.name_scope('TOWER_%d' % (i)) as scope:
             # Create model.
@@ -488,42 +485,38 @@ def main():
           		train_big_frame_state[i],
           		train_frame_state[i],
                       	l2_regularization_strength=args.l2_regularization_strength)
+            
+            # Reuse variables for the nect tower.
             tf.get_variable_scope().reuse_variables()
+
+            # UNKNOWN
             losses.append(loss)
-            # Reuse variables for the next tower.
             trainable = tf.trainable_variables()
             for name in trainable:  
               print(name) 
-            '''
-            del_trainable_list=tf.get_collection(\
-			tf.GraphKeys.TRAINABLE_VARIABLES,
-			scope='SEEPCH_RNN_LAYER')
-            trainable = list(set(trainable) - set(del_trainable_list))
-            '''
+
             gradients = optim.compute_gradients(loss,trainable)
       				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
       				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE)
             print("==========================")
             for name in gradients:  
               print(name) 
-            #gradients = tf.gradients(loss[i], trainable)
-            #debug_print_op = tf.py_func(_debug_print_detail_func, [loss], [tf.bool])
-            #with tf.control_dependencies(debug_print_op):
+            # Keep track of the gradients across all towers.
             tower_grads.append(gradients)
-            #tower_grads.append(grads)
-    #debug_print_op = tf.py_func(_debug_print_func, [tower_grads], [tf.bool])
-    #with tf.control_dependencies(debug_print_op):
+
+    # We must calculate the mean of each gradient. Note that this is the
+    # synchronization point across all towers.
     grad_vars = average_gradients(tower_grads)
+
+    # UNKNOWN
     grads, vars = zip(*grad_vars)
     grads_clipped, _ = tf.clip_by_global_norm(grads, 5.0)
     grad_vars = zip(grads_clipped, vars)
-    #for name in grads:  
-    #  print(name) 
+
+    # Apply the gradients to adjust the shared variables.
     apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step) 
-    #apply_gradient_op = optim.apply_gradients(grads) 
-    #'''
+
 ###################
-    #infe_para = create_gen_wav_para(net)
 
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
@@ -534,16 +527,13 @@ def main():
     # Set up session
     #tf_config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=False)
     tf_config = tf.ConfigProto(\
+        # allow_soft_placement is set to True to build towers on GPU
 		allow_soft_placement=True,\
 	 	log_device_placement=False,\
                 inter_op_parallelism_threads = 1)
     tf_config.gpu_options.allow_growth = True
     sess = tf.Session(config=tf_config)
-    #sess = mpi.Session(0,config=tf_config)
 
-    #sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
-    #init = tf.global_variables_initializer()
-    #sess.run(init)
     sess.run(tf.initialize_all_variables())
 
     # Saver for storing checkpoints of the model.
@@ -562,6 +552,7 @@ def main():
               "the previous model.")
         raise
 
+    # Start the queue runners.
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     reader.start_threads(sess)
 
@@ -572,79 +563,45 @@ def main():
         for step in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
             idx_begin=0
-            #inputs = sess.run(audio_batch)
-            inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
-            #print(inputslist[0].shape)
-            if 0 != inputslist[0][0].shape[1]%3 :
-                raise ValueError("0 != inputslist[0].shape%3,")
-            s_len=inputslist[0][0].shape[1]/3
-            speeker_1  =inputslist[0][0][:,:s_len,:]
-            speeker_2  =inputslist[0][0][:,s_len:s_len*2,:]
-            speeker_mix=inputslist[0][0][:,-s_len:,:]
-
-            angle_1    =inputslist[0][1][:,:s_len,:]
-            angle_2    =inputslist[0][1][:,s_len:s_len*2,:]
-            angle_mix  =inputslist[0][1][:,-s_len:,:]
-
-            speeker_test_1  =inputslist[0][2][:,:s_len,:]
-            speeker_test_2  =inputslist[0][2][:,s_len:s_len*2,:]
-            speeker_test_mix=inputslist[0][2][:,-s_len:,:]
-
-            angle_test_1    =inputslist[0][3][:,:s_len,:]
-            angle_test_2    =inputslist[0][3][:,s_len:s_len*2,:]
-            angle_test_mix  =inputslist[0][3][:,-s_len:,:]
-            #print(speeker_0.shape,speeker_1.shape,speeker_mix.shape)
-
-            final_big_s = []
-            final_s = []
-            for g in xrange(args.num_gpus):
-              final_big_s.append(sess.run(net.initial_state))
-              final_s.append(sess.run(net.initial_state))
-            testall=None
-            #for i in range(0, (args.sample_size - args.big_frame_size)/
-            #                  (args.seq_len - args.big_frame_size)):
+           
             inp_dict={}
             angle= None
+           
+           
+            inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
+            s_len=inputslist[0][0].shape[1]/3
+            if(args.seq_len > s_len):
+                logging.error("args.seq_len %d > s_len %d", args.seq_len, s_len)
+            
             for g in xrange(args.num_gpus):
-              inp_dict[speech_inputs_1[g]]  =speeker_1[:, :args.seq_len, :]
-              inp_dict[speech_inputs_2[g]]  =speeker_2[:, :args.seq_len, :]
-              inp_dict[speech_inputs_mix[g]]=speeker_mix[:, :args.seq_len, :]
-              angle     = angle_mix[:, :args.seq_len, :]
-              angle_test= angle_test_mix[:, :args.seq_len, :]
-            idx_begin += args.seq_len-args.big_frame_size
+              inp_dict[speech_inputs_1[g]]  =inputslist[g][0][:,:args.seq_len,:]
+              inp_dict[speech_inputs_2[g]]  =inputslist[g][0][:,s_len:s_len+args.seq_len,:]
+              inp_dict[speech_inputs_mix[g]]=inputslist[g][0][:,-s_len:-s_len+args.seq_len,:]
+              angle     = inputslist[0][1][:,-s_len:-s_len+args.seq_len,:]
+              
+            
+            loss_value,_, mask_state_value = sess.run([losses, apply_gradient_op,mask_state], feed_dict=inp_dict)
 
-            duration1 = time.time() - start_time
-            loss_value,_, mask_state_value = \
-            	sess.run([losses, apply_gradient_op,mask_state], feed_dict=inp_dict)
             for g in xrange(args.num_gpus):
               loss_sum += loss_value[g]/args.num_gpus
-            #    break
+
             duration = time.time() - start_time
             if(step<100):
-              #print('step {:d} - loss = {:.3f}, ({:.3f} sec/step, ({:.3f} sec)'
-              #    .format(step, loss_sum, duration, duration1))
-              #rank = sess.run(mpi.rank())
-              #log_str = ('rank {%d} step {%d} - loss = {%0.3f}, ({%0.3f} sec/step,{%0.3f} sec/step)')%(rank, step, loss_sum, duration,duration1)
-              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step,{%0.3f} sec/step)')%(step, loss_sum, duration,duration1)
+              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')%(step, loss_sum, duration)
               logging.warning(log_str)
               loss_sum = 0;
+
             elif(0==step % 100):
-              #print('step {:d} - loss = {:.3f}, ({:.3f} sec/step , ({:.3f} sec)'
-              #    .format(step, loss_sum/100, duration,duration1))
-              #rank = sess.run(mpi.rank())
-              #log_str = ('rank {%d} step {%d} - loss = {%0.3f}, ({%0.3f} sec/step,{%0.3f} sec/step)')%(rank, step, loss_sum/100, duration,duration1)
-              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step,{%0.3f} sec/step)')%(step, loss_sum/100, duration,duration1)
+              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')%(step, loss_sum/100, duration)
               logging.warning(log_str)
               loss_sum = 0;
-              #========================
-            #'''
+
             elif(0==step % 5001):
-              outp1,outp2 = \
-              sess.run([output1,output2], feed_dict=inp_dict)
+              outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
               fs= 16000
               framesz= 0.032
               hop= framesz*0.5
-              print(outp1.shape,outp2.shape,angle.shape)
+
               outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
               outp_angle=np.reshape(angle, (angle.shape[1], angle.shape[2]))
               outp1_re=outp1*np.cos(outp_angle) + 1j*outp1*np.sin(outp_angle)
@@ -662,11 +619,12 @@ def main():
               #========================
               inp_dict={}
               for g in xrange(args.num_gpus):
-                inp_dict[speech_inputs_1[g]] = speeker_test_1[:,:args.seq_len,:]
-                inp_dict[speech_inputs_2[g]] = speeker_test_2[:,:args.seq_len,:]
-                inp_dict[speech_inputs_mix[g]] = speeker_test_mix[:,:args.seq_len,:]
-              outp1,outp2 = \
-              sess.run([output1,output2], feed_dict=inp_dict)
+                inp_dict[speech_inputs_1[g]] = inputslist[g][2][:,:args.seq_len,:]
+                inp_dict[speech_inputs_2[g]] = inputslist[g][2][:,s_len:s_len+args.seq_len,:]
+                inp_dict[speech_inputs_mix[g]] = inputslist[g][2][:,-s_len:-s_len+args.seq_len,:]
+                angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
+
+              outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
               outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
               outp_angle=np.reshape(angle_test,(angle_test.shape[1],angle_test.shape[2]))
@@ -682,7 +640,6 @@ def main():
               x_r=istft(outp2_re, fs, (outp2.shape[1]+1)*256, hop)
               scipy.io.wavfile.write("speeker2_test_"+str(step)+".wav", fs, x_r)
 
-              #'''
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
               outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
@@ -700,14 +657,10 @@ def main():
               outp2_re=np.column_stack((outp2_re,np.conj(outp2_re[:,1:-1].T[::-1].T)))
               x_r=istft(outp2_re, fs, (outp2.shape[1]+1)*256*3, hop)
               scipy.io.wavfile.write("speeker_raw_test_"+str(step)+".wav", fs, x_r)
- #             break
-            #'''
 
-            #''' 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)
                 last_saved_step = step
-            #''' 
 
     except KeyboardInterrupt:
         # Introduce a line break after ^C is displayed so save message
@@ -724,5 +677,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-#train_step = tf.train.AdamOptimizer(learning_rate).minimize(cost, aggregation_method = tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
 
