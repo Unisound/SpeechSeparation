@@ -21,6 +21,20 @@ from tensorflow.python.client import timeline
 import ctypes
 import scipy
 
+
+def mk_audio(output,angle,step,num,cons=1):
+    fs= 16000
+    framesz= 0.032
+    hop= framesz*0.5
+    output = np.reshape(output, (output.shape[1], output.shape[2]))
+    output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
+    output_re = output*np.cos(output_angle) + 1j*output*np.sin(output_angle)
+
+    output_re=np.column_stack((output_re,np.conj(output_re[:,1:-1].T[::-1].T)))
+    x_r=istft(output_re, fs, (output.shape[1]+1)*256*cons, hop)
+    scipy.io.wavfile.write("speeker"+str(num)+"_"+str(step)+".wav", fs, x_r)
+    return
+
 def _debug_print_func(val):
     print (val.shape)
     return False
@@ -317,70 +331,6 @@ def average_gradients(tower_grads):
     average_grads.append(grad_and_var)
   return average_grads
 
-# GENERATE 
-def create_gen_wav_para(net):
-  with tf.name_scope('infe_para'):
-    infe_para = dict()
-    infe_para['infe_big_frame_inp'] = \
-	tf.get_variable("infe_big_frame_inp", 
-		[net.batch_size, net.big_frame_size,1], dtype=tf.float32)
-    infe_para['infe_big_frame_outp'] = \
-	tf.get_variable("infe_big_frame_outp", 
-		[net.batch_size, net.big_frame_size/net.frame_size, net.dim], dtype=tf.float32)
-
-    infe_para['infe_big_frame_outp_slices'] = \
-	tf.get_variable("infe_big_frame_outp_slices", 
-		[net.batch_size, 1, net.dim], dtype=tf.float32)
-    infe_para['infe_frame_inp'] = \
-	tf.get_variable("infe_frame_inp", 
-		[net.batch_size, net.frame_size,1], dtype=tf.float32)
-    infe_para['infe_frame_outp'] = \
-	tf.get_variable("infe_frame_outp", 
-		[net.batch_size, net.frame_size, net.dim], dtype=tf.float32)
-
-    infe_para['infe_frame_outp_slices'] = \
-	tf.get_variable("infe_frame_outp_slices", 
-		[net.batch_size, 1, net.dim], dtype=tf.float32)
-    infe_para['infe_sample_inp'] = \
-	tf.get_variable("infe_sample_inp", 
-		[net.batch_size, net.frame_size,1], dtype=tf.int32)
-
-    infe_para['infe_big_frame_state'] = net.cell.zero_state(net.batch_size, tf.float32)
-    infe_para['infe_frame_state']     = net.cell.zero_state(net.batch_size, tf.float32)
-
-	#net.big_frame_gen(infe_para['infe_big_frame_inp'])
-    tf.get_variable_scope().reuse_variables()
-    infe_para['infe_big_frame_outp'], \
-    infe_para['infe_final_big_frame_state'] = \
-        net._create_network_BigFrame(num_steps = 1,
-		big_frame_state = infe_para['infe_big_frame_state'],
-           	big_input_sequences = infe_para['infe_big_frame_inp'])
-
-	#net.frame_gen(infe_para['infe_big_frame_outp'], infe_para['infe_frame_inp'])
-    infe_para['infe_frame_outp'], \
-    infe_para['infe_final_frame_state'] = \
-        net._create_network_Frame(num_steps = 1,
-        	big_frame_outputs = infe_para['infe_big_frame_outp_slices'],
-		frame_state = infe_para['infe_frame_state'],
-        	input_sequences = infe_para['infe_frame_inp'])
-
-	#net.sample_gen(infe_para['infe_frame_outp'],infe_para ['infe_sample_inp'])
-    sample_out = \
-        net._create_network_Sample(frame_outputs=infe_para['infe_frame_outp_slices'],
-        			sample_input_sequences = infe_para['infe_sample_inp'])
-    sample_out = \
-	tf.reshape(sample_out, [-1, net.q_levels])
-    # Cast to float64 to avoid bug in TensorFlow
-    infe_para['infe_sample_outp'] = tf.cast(
-        tf.nn.softmax(tf.cast(sample_out, tf.float64)), tf.float32)
-
-    infe_para['infe_sample_decode_inp'] = \
-	tf.placeholder(tf.int32)
-    infe_para['infe_decode'] = \
-	mu_law_decode(infe_para['infe_sample_decode_inp'], net.q_levels)
-
-    return infe_para
-
 
 def main():
     args = get_arguments()
@@ -596,25 +546,11 @@ def main():
               logging.warning(log_str)
               loss_sum = 0;
 
-            elif(0==step % 5001):
+            elif(0==step % 5):
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-              fs= 16000
-              framesz= 0.032
-              hop= framesz*0.5
-
-              outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
-              outp_angle=np.reshape(angle, (angle.shape[1], angle.shape[2]))
-              outp1_re=outp1*np.cos(outp_angle) + 1j*outp1*np.sin(outp_angle)
-              outp1_re=np.column_stack((outp1_re,np.conj(outp1_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp1_re, fs, (outp1.shape[1]+1)*256, hop)
-              scipy.io.wavfile.write("speeker1_"+str(step)+".wav", fs, x_r)
-
-              outp2=np.reshape(outp2, (outp2.shape[1], outp2.shape[2]))
-              outp_angle=np.reshape(angle, (angle.shape[1], angle.shape[2]))
-              outp2_re=outp2*np.cos(outp_angle) + 1j*outp2*np.sin(outp_angle)
-              outp2_re=np.column_stack((outp2_re,np.conj(outp2_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp2_re, fs, (outp2.shape[1]+1)*256, hop)
-              scipy.io.wavfile.write("speeker2_"+str(step)+".wav", fs, x_r)
+              
+              mk_audio(outp1,angle,step,1)
+              mk_audio(outp2,angle,step,2)
 
               #========================
               inp_dict={}
@@ -626,37 +562,15 @@ def main():
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
-              outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
-              outp_angle=np.reshape(angle_test,(angle_test.shape[1],angle_test.shape[2]))
-              outp1_re=outp1*np.cos(outp_angle) + 1j*outp1*np.sin(outp_angle)
-              outp1_re=np.column_stack((outp1_re,np.conj(outp1_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp1_re, fs, (outp1.shape[1]+1)*256, hop)
-              scipy.io.wavfile.write("speeker1_test_"+str(step)+".wav", fs, x_r)
-
-              outp2=np.reshape(outp2, (outp2.shape[1], outp2.shape[2]))
-              outp_angle=np.reshape(angle_test,(angle_test.shape[1],angle_test.shape[2]))
-              outp2_re=outp2*np.cos(outp_angle) + 1j*outp2*np.sin(outp_angle)
-              outp2_re=np.column_stack((outp2_re,np.conj(outp2_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp2_re, fs, (outp2.shape[1]+1)*256, hop)
-              scipy.io.wavfile.write("speeker2_test_"+str(step)+".wav", fs, x_r)
+              mk_audio(outp1,angle_test,step,"1_test_")
+              mk_audio(outp2,angle_test,step,"2_test_")
 
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
-              outp1=np.reshape(outp1, (outp1.shape[1], outp1.shape[2]))
-              outp_angle1=np.reshape(angle1, (angle1.shape[1], angle1.shape[2]))
-              outp1_re=outp1*np.cos(outp_angle1) + 1j*outp1*np.sin(outp_angle1)
-              outp1_re=np.column_stack((outp1_re,np.conj(outp1_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp1_re, fs, (outp1.shape[1]+1)*256*3, hop)
-              scipy.io.wavfile.write("speeker_raw_train_"+str(step)+".wav", fs, x_r)
-
               outp2=inputslist[0][2]
               angle2=inputslist[0][3]
-              outp2=np.reshape(outp2, (outp2.shape[1], outp2.shape[2]))
-              outp_angle2=np.reshape(angle2, (angle2.shape[1], angle2.shape[2]))
-              outp2_re=outp2*np.cos(outp_angle2) + 1j*outp2*np.sin(outp_angle2)
-              outp2_re=np.column_stack((outp2_re,np.conj(outp2_re[:,1:-1].T[::-1].T)))
-              x_r=istft(outp2_re, fs, (outp2.shape[1]+1)*256*3, hop)
-              scipy.io.wavfile.write("speeker_raw_test_"+str(step)+".wav", fs, x_r)
+              mk_audio(outp1,angle1,step,"raw_train_",3)
+              mk_audio(outp2,angle2,step,"_raw_test_",3)
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)
