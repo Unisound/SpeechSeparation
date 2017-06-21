@@ -90,7 +90,6 @@ class AudioReader(object):
                  coord,
                  sample_rate,
                  gc_enabled,
-                 #receptive_field,
                  sample_size=None,
                  silence_threshold=None,
                  queue_size=32):
@@ -98,7 +97,6 @@ class AudioReader(object):
         self.sample_rate = sample_rate
         self.coord = coord
         self.sample_size = sample_size
-        #self.receptive_field = receptive_field
         self.silence_threshold = silence_threshold
         self.gc_enabled = gc_enabled
         self.threads = []
@@ -107,11 +105,6 @@ class AudioReader(object):
         self.angle_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.sample_test_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.angle_test_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
-        '''
-        self.queue = tf.RandomShuffleQueue(queue_size,5
-                                         ['float32'],
-                                         shapes=[(None, None)])
-        '''
         self.queue = tf.PaddingFIFOQueue(queue_size,
                         ['float32','float32','float32','float32'],
                         shapes=[(None, None),(None,None),(None,None),(None,None)])
@@ -174,10 +167,6 @@ class AudioReader(object):
                 #audio = copy.deepcopy(audio_copy)
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for audio, filename in iterator:
-                #print(filename)
-                #print(type(audio))
-                #if(audio.tolist()==audio_list[0][0].tolist()):
-                #  print("all the same")
                 if self.coord.should_stop():
                     stop = True
                     break
@@ -196,52 +185,7 @@ class AudioReader(object):
                 X_test, X_hlf_test=stft(audio_test, fs, framesz, hop)
                 amplitude_test= scipy.absolute(X_hlf_test)
                 angle_test= np.angle(X_hlf_test)
-                #====================
-                '''
-                #X_1=amplitude*np.cos(angle) + 1j*amplitude*np.sin(angle)
-                #X_1=amplitude*np.cos(angle) + 0j
-                X_1=amplitude + 0j
-                #angle= np.angle(speeker_mix[:, :args.seq_len, :])
-                #x_r1=istft(X, fs, (X.shape[0]+1)*int(hop*fs), hop)
-                #x_r2=istft(X_1, fs, (X_1.shape[0]+1)*int(hop*fs), hop)
 
-                x3=np.column_stack((X_1,np.conj(X_1[:,1:-1].T[::-1].T)))
-                x_r3=istft(x3, fs, (X_1.shape[0]+1)*int(hop*fs), hop)
-                scipy.io.wavfile.write("test1_.wav", fs, x_r3)
-                break
-                #print("X.shape: ",X.shape)
-                #print("X_hlf.shape: ",X_hlf.shape)
-                print("X3.shape: ",x3.shape)
-                #print("similar x_r1 & audio: ",cosSimilar(x_r1,np.reshape(audio, (-1))[:(X.shape[0]+1)*int(hop*fs)]))
-                #print("similar x_r2 & audio: ",cosSimilar(x_r2,np.reshape(audio, (-1))[:(X.shape[0]+1)*int(hop*fs)]))
-                print("similar x_r3 & audio: ",cosSimilar(x_r3,np.reshape(audio, (-1))[:(X.shape[0]+1)*int(hop*fs)]))
-
-                c1=X[:,-X.shape[1]/2+1:]
-                c2=X_hlf[:,1:-1].T[::-1].T
-                print((c1[0,:1]==c2[0,:1]).all())
-                print("c1.shape: ",c1.shape)
-                print("c2.shape: ",c2.shape)
-                print("=======X==========")
-                print(X)
-                print("=======X_hlf===========")
-                print(X_hlf)
-                print("=======c1===========")
-                print(c1[0,:1])
-                print("=======c2===========")
-                print(c2[0,:1])
-                print("x_hlf.shape: ",X_hlf.shape)
-                print("X_hlf.T.shape: ",X_hlf[:,1:-1].T[::-1].T.shape)
-                #c=np.column_stack((X_hlf[:,:-1],c1))
-                c=np.column_stack((X_hlf,c2))
-                x_r1=istft(c, fs, (X.shape[0]+1)*int(hop*fs), hop)
-                #print("similar x & audio: ",cosSimilar(x_r,np.reshape(audio, (-1))[:(X.shape[0]+1)*int(hop*fs)]))
-                print("similar xHLF & audio: ",cosSimilar(x_r1,np.reshape(audio, (-1))[:(X.shape[0]+1)*int(hop*fs)]))
-                '''
-
-                '''
-                feed_dict={self.sample_placeholder: amplitude,
-                           self.angle_placeholder: angle})
-                '''
                 sess.run(self.enqueue,
                   feed_dict={self.sample_placeholder: amplitude,
                              self.angle_placeholder: angle,
