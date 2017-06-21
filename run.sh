@@ -4,9 +4,9 @@
 
 #	--data_dir=./mix/out \
 
-python train.py \
+python test.py \
 	--data_dir=../speech_mix/train \
-	--test_dir=../speech_mix/test \
+	--test_dir=../speech_mix/test/audio1_3-audio2.wav \
 	--silence_threshold=0.1 \
         --big_frame_size=8 \
         --frame_size=2 \
@@ -18,5 +18,5 @@ python train.py \
         --emb_size=256 \
         --batch_size=1 \
 	--optimizer=adam \
-	--num_gpus=2
+	--num_gpus=1
 

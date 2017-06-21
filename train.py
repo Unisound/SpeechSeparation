@@ -21,7 +21,7 @@ from tensorflow.python.client import timeline
 import ctypes
 import scipy
 
-
+# an audio-making function
 def mk_audio(output,angle,step,num,cons=1):
     fs= 16000
     framesz= 0.032
@@ -30,24 +30,20 @@ def mk_audio(output,angle,step,num,cons=1):
     output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
     output_re = output*np.cos(output_angle) + 1j*output*np.sin(output_angle)
 
+    # np.column_stack: stack 1-D arrays as columns into a 2-D array
+    # np.conj: return the complex conjugate, element-wise
     output_re=np.column_stack((output_re,np.conj(output_re[:,1:-1].T[::-1].T)))
     x_r=istft(output_re, fs, (output.shape[1]+1)*256*cons, hop)
     scipy.io.wavfile.write("speeker"+str(num)+"_"+str(step)+".wav", fs, x_r)
     return
 
-def _debug_print_func(val):
-    print (val.shape)
-    return False
-
-def _debug_print_detail_func(val):
-    print (val)
-    return False
-
 from speech_separation import cosSimilar,stft,istft
-from speech_separation import SpeechSeparation, AudioReader, mu_law_decode, optimizer_factory
+from speech_separation import SpeechSeparation, AudioReader
+from speech_separation import mu_law_decode, optimizer_factory
+
+# hyper parameters
 NUM_OF_FREQUENCY_POINTS = 257
 BATCH_SIZE = 1
-#DATA_DIRECTORY = './VCTK-Corpus'
 DATA_DIRECTORY = './pinao-corpus'
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 2000
@@ -117,8 +113,6 @@ def get_arguments():
                         help='Learning rate for training. Default: ' + str(LEARNING_RATE) + '.')
     parser.add_argument('--sample_rate', type=int, default=SAMPLE_RATE,
                         help='sample rate for training. Default: ' + str(SAMPLE_RATE) + '.')
-#    parser.add_argument('--wavenet_params', type=str, default=WAVENET_PARAMS,
-#                        help='JSON file with the network parameters. Default: ' + WAVENET_PARAMS + '.')
     parser.add_argument('--sample_size', type=int, default=SAMPLE_SIZE,
                         help='Concatenate and cut audio samples to this many '
                         'samples. Default: ' + str(SAMPLE_SIZE) + '.')
@@ -144,7 +138,6 @@ def get_arguments():
     parser.add_argument('--max_checkpoints', type=int, default=MAX_TO_KEEP,
                         help='Maximum amount of checkpoints that will be kept alive. Default: '
                              + str(MAX_TO_KEEP) + '.')
-###############SAMPLE_RNN################
     def t_or_f(arg):
         ua = str(arg).upper()
         if 'TRUE'.startswith(ua):
@@ -198,6 +191,7 @@ def get_arguments():
     return parser.parse_args()
 
 
+###############Save and Load################
 def save(saver, sess, logdir, step):
     model_name = 'model.ckpt'
     checkpoint_path = os.path.join(logdir, model_name)
@@ -230,9 +224,9 @@ def load(saver, sess, logdir):
         print(" No checkpoint found.")
         return None
 
+###############Helper Functions################
 
 def get_default_logdir(logdir_root):
-    #logdir = os.path.join(logdir_root, 'train', STARTED_DATESTRING)
     logdir = os.path.join(logdir_root, 'train')
     return logdir
 
@@ -331,6 +325,7 @@ def average_gradients(tower_grads):
     average_grads.append(grad_and_var)
   return average_grads
 
+###############Main Functions################
 
 def main():
     args = get_arguments()
@@ -379,6 +374,7 @@ def main():
 		[], initializer = tf.constant_initializer(0), trainable=False)
 
 
+    # Create optimizer (default is Adam)
     optim = optimizer_factory[args.optimizer](
                     learning_rate=args.learning_rate,
                     momentum=args.momentum)
@@ -484,7 +480,7 @@ def main():
     tf_config.gpu_options.allow_growth = True
     sess = tf.Session(config=tf_config)
 
-    sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
     # Saver for storing checkpoints of the model.
     saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=args.max_checkpoints)
@@ -546,7 +542,7 @@ def main():
               logging.warning(log_str)
               loss_sum = 0;
 
-            elif(0==step % 5):
+            elif(0==step % 5001):
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
               
               mk_audio(outp1,angle,step,1)
@@ -569,7 +565,7 @@ def main():
               angle1=inputslist[0][1]
               outp2=inputslist[0][2]
               angle2=inputslist[0][3]
-              mk_audio(outp1,angle1,step,"raw_train_",3)
+              mk_audio(outp1,angle1,step,"_raw_train_",3)
               mk_audio(outp2,angle2,step,"_raw_test_",3)
 
             if step % args.checkpoint_every == 0:
