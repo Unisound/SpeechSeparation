@@ -8,7 +8,7 @@ import librosa
 import sys
 import copy
 import numpy as np
-from numpy import linalg 
+from numpy import linalg
 import tensorflow as tf
 import scipy
 from .util import (cosSimilar,stft,istft,irstft)
@@ -173,7 +173,8 @@ class AudioReader(object):
                 fs= 16000
                 framesz= 0.032
                 hop= framesz*0.5
-                #print("audio.shape: ",audio.shape)
+
+                # print("audio.shape: ",audio.shape)
                 X, X_hlf=stft(audio, fs, framesz, hop)
                 amplitude= scipy.absolute(X_hlf)
                 angle= np.angle(X_hlf)

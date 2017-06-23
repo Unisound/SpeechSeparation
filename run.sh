@@ -4,10 +4,9 @@
 
 #	--data_dir=./mix/out \
 
-python test.py \
-	--data_dir=../speech_mix/train \
-	--test_dir=../speech_mix/test/audio1_3-audio2.wav \
-	--silence_threshold=0.1 \
+python train.py \
+	--data_dir=mix/train \
+	--test_dir=mix/test \
         --big_frame_size=8 \
         --frame_size=2 \
         --q_levels=256 \
