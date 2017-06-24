@@ -19,28 +19,9 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import timeline
 import ctypes
-import scipy
+import librosa
 
-# an audio-making function
-def mk_audio(output,angle,step,num,cons=1):
-    fs= 16000
-    framesz= 0.032
-    hop= framesz*0.5
-    output = np.reshape(output, (output.shape[1], output.shape[2]))
-    output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
-    output_re = output*np.cos(output_angle) + 1j*output*np.sin(output_angle)
-
-    # np.column_stack: stack 1-D arrays as columns into a 2-D array
-    # np.conj: return the complex conjugate, element-wise
-    output_re=np.column_stack((output_re,np.conj(output_re[:,1:-1].T[::-1].T)))
-    outsize = output.shape[0]*256*cons
-    x_r=istft(output_re, fs, outsize, hop)
-    scipy.io.wavfile.write("spk"+str(num)+"_"+str(step)+".wav", fs, x_r)
-    return
-
-from speech_separation import cosSimilar,stft,istft
-from speech_separation import SpeechSeparation, AudioReader
-from speech_separation import mu_law_decode, optimizer_factory
+from speech_separation import SpeechSeparation, AudioReader, optimizer_factory
 
 # hyper parameters
 NUM_OF_FREQUENCY_POINTS = 257
@@ -64,6 +45,22 @@ SAMPLE_RATE = 16000
 BITRATE = 16000
 LENGTH = N_SECS*BITRATE
 NUM_GPU = 1
+
+def mk_audio(output,angle,filename):
+    fs= 16000
+    framelen= 512
+    frameshift = 256
+
+    output = np.reshape(output, (output.shape[1], output.shape[2]))
+    output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
+    output_re = output * np.exp(1j * output_angle)
+    output_re = np.transpose(output_re)
+    x_r=librosa.core.istft(output_re, frameshift, framelen)
+    librosa.output.write_wav(filename, x_r,fs)
+    return
+
+
+
 
 def get_arguments():
     def _str_to_bool(s):
@@ -543,13 +540,11 @@ def main():
               logging.warning(log_str)
               loss_sum = 0;
 
-            elif(0==step % 5000):
+            if (0==step % 5000):
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
-              mk_audio(outp1,angle,step,1)
-              mk_audio(outp2,angle,step,2)
-              print("train output1 shape", outp1.shape)
-              print("train output2 shape", outp2.shape)
+              mk_audio(outp1,angle,"spk1_"+str(step)+".wav")
+              mk_audio(outp2,angle,"spk2_"+str(step)+".wav")
 
               #========================
               inp_dict={}
@@ -560,20 +555,16 @@ def main():
                 angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-              print("test output1 shape", outp1.shape)
-              print("test output2 shape", outp2.shape)
 
-              mk_audio(outp1,angle_test,step,"1_test")
-              mk_audio(outp2,angle_test,step,"2_test")
+              mk_audio(outp1,angle_test,"spk1_test_"+str(step)+".wav")
+              mk_audio(outp2,angle_test,"spk2_test_"+str(step)+".wav")
 
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
               outp2=inputslist[0][2]
               angle2=inputslist[0][3]
-              print("raw output1 shape", outp1.shape)
-              print("raw output2 shape", outp2.shape)
-              mk_audio(outp1,angle1,step,"_raw_train",3)
-              mk_audio(outp2,angle2,step,"_raw_test",3)
+              mk_audio(outp1,angle1,"raw_train_"+str(step)+".wav")
+              mk_audio(outp2,angle2,"raw_test_"+str(step)+".wav")
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)

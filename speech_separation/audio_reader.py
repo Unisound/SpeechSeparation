@@ -11,9 +11,7 @@ import numpy as np
 from numpy import linalg
 import tensorflow as tf
 import scipy
-from .util import (cosSimilar,stft,istft,irstft)
 
-FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
 
 
 def get_category_cardinality(files):
@@ -47,17 +45,30 @@ def find_files(directory, pattern='*.wav'):
     return files
 
 
+
+def wav2spec(filename):
+    fs= 16000
+    framelen = 512
+    frameshift = 256
+
+    _,audio = scipy.io.wavfile.read(filename)
+    #audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
+    D =librosa.core.stft(audio,framelen, frameshift)
+    D = np.transpose(D)
+    amplitude= np.absolute(D)
+    angle= np.angle(D)
+    return amplitude,angle
+
+
+
 def load_generic_audio(directory, sample_rate):
     '''Generator that yields audio waveforms from the directory.'''
     files = find_files(directory)
-    id_reg_exp = re.compile(FILE_PATTERN)
-    #print("files length: {}".format(len(files)))
     randomized_files = randomize_files(files)
     for filename in randomized_files:
-        #audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
-        _, audio = scipy.io.wavfile.read(filename)
-        audio = audio.reshape(-1, 1)
-        yield audio, filename
+        #print(filename)
+        absspec,angle = wav2spec(filename)
+        yield absspec,angle, filename
 
 def trim_silence(audio, threshold):
     '''Removes silence at the beginning and end of a sample.'''
@@ -166,26 +177,13 @@ class AudioReader(object):
             #for audio_copy in audio_list:
                 #audio = copy.deepcopy(audio_copy)
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
-            for audio, filename in iterator:
+            for amplitude, angle, _ in iterator:
                 if self.coord.should_stop():
                     stop = True
                     break
-                fs= 16000
-                framesz= 0.032
-                hop= framesz*0.5
 
-                # print("audio.shape: ",audio.shape)
-                X, X_hlf=stft(audio, fs, framesz, hop)
-                amplitude= scipy.absolute(X_hlf)
-                angle= np.angle(X_hlf)
-                #====================
-                audio_test = \
-		  self.test_files[random.randint(0, (len(self.test_files) - 1))]
-                _, audio_test = scipy.io.wavfile.read(audio_test)
-
-                X_test, X_hlf_test=stft(audio_test, fs, framesz, hop)
-                amplitude_test= scipy.absolute(X_hlf_test)
-                angle_test= np.angle(X_hlf_test)
+                testfile = self.test_files[random.randint(0, (len(self.test_files) - 1))]
+                amplitude_test, angle_test = wav2spec(testfile)
 
                 sess.run(self.enqueue,
                   feed_dict={self.sample_placeholder: amplitude,
