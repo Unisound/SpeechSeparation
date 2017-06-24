@@ -33,8 +33,9 @@ def mk_audio(output,angle,step,num,cons=1):
     # np.column_stack: stack 1-D arrays as columns into a 2-D array
     # np.conj: return the complex conjugate, element-wise
     output_re=np.column_stack((output_re,np.conj(output_re[:,1:-1].T[::-1].T)))
-    x_r=istft(output_re, fs, (output.shape[1]+1)*256*cons, hop)
-    scipy.io.wavfile.write("speeker"+str(num)+"_"+str(step)+".wav", fs, x_r)
+    outsize = output.shape[0]*256*cons
+    x_r=istft(output_re, fs, outsize, hop)
+    scipy.io.wavfile.write("spk"+str(num)+"_"+str(step)+".wav", fs, x_r)
     return
 
 from speech_separation import cosSimilar,stft,istft
@@ -284,7 +285,7 @@ def create_model(args):
     seq_len=args.seq_len,
     num_of_frequency_points=args.num_of_frequency_points,
     emb_size=args.emb_size)
-  return net 
+  return net
 
 def average_gradients(tower_grads):
   """Calculate the average gradient for each shared variable across all towers.
@@ -298,9 +299,9 @@ def average_gradients(tower_grads):
      across all towers.
   """
   #print("================================")
-  #for name in tower_grads:  
-  #  for name2 in name:  
-  #   print(name2) 
+  #for name in tower_grads:
+  #  for name2 in name:
+  #   print(name2)
   average_grads = []
   for grad_and_vars in zip(*tower_grads):
     # Note that each grad_and_vars looks like the following:
@@ -370,7 +371,7 @@ def main():
     #'''
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
-    global_step = tf.get_variable('global_step', 
+    global_step = tf.get_variable('global_step',
 		[], initializer = tf.constant_initializer(0), trainable=False)
 
 
@@ -391,23 +392,23 @@ def main():
     final_frame_state = []
     for i in xrange(args.num_gpus):
       speech_inputs_2.append(tf.Variable(
-          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]), 
-                        trainable=False , 
+          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+                        trainable=False ,
           		name="speech_batch_inputs",
           		dtype=tf.float32))
       speech_inputs_1.append(tf.Variable(
-          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]), 
-                        trainable=False , 
+          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+                        trainable=False ,
           		name="speech_batch_inputs",
           		dtype=tf.float32))
       speech_inputs_mix.append(tf.Variable(
-          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]), 
-                        trainable=False , 
+          		tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+                        trainable=False ,
           		name="speech_batch_inputs",
           		dtype=tf.float32))
       train_input_batch_rnn.append(tf.Variable(
-          		tf.zeros([net.batch_size, net.seq_len,1]), 
-                        trainable=False , 
+          		tf.zeros([net.batch_size, net.seq_len,1]),
+                        trainable=False ,
           		name="input_batch_rnn",
           		dtype=tf.float32))
       speech_state.append(net.cell.zero_state(net.batch_size, tf.float32))
@@ -415,7 +416,7 @@ def main():
       train_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
       final_big_frame_state.append(net.cell.zero_state(net.batch_size, tf.float32))
       final_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
-    
+
     with tf.variable_scope(tf.get_variable_scope()):
       for i in xrange(args.num_gpus):
         with tf.device('/gpu:%d' % i):
@@ -431,22 +432,22 @@ def main():
           		train_big_frame_state[i],
           		train_frame_state[i],
                       	l2_regularization_strength=args.l2_regularization_strength)
-            
+
             # Reuse variables for the nect tower.
             tf.get_variable_scope().reuse_variables()
 
             # UNKNOWN
             losses.append(loss)
             trainable = tf.trainable_variables()
-            for name in trainable:  
-              print(name) 
+            for name in trainable:
+              print(name)
 
             gradients = optim.compute_gradients(loss,trainable)
       				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
       				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE)
             print("==========================")
-            for name in gradients:  
-              print(name) 
+            for name in gradients:
+              print(name)
             # Keep track of the gradients across all towers.
             tower_grads.append(gradients)
 
@@ -460,7 +461,7 @@ def main():
     grad_vars = zip(grads_clipped, vars)
 
     # Apply the gradients to adjust the shared variables.
-    apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step) 
+    apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step)
 
 ###################
 
@@ -509,23 +510,23 @@ def main():
         for step in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
             idx_begin=0
-           
+
             inp_dict={}
             angle= None
-           
-           
+
+
             inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
             s_len=inputslist[0][0].shape[1]/3
             if(args.seq_len > s_len):
                 logging.error("args.seq_len %d > s_len %d", args.seq_len, s_len)
-            
+
             for g in xrange(args.num_gpus):
               inp_dict[speech_inputs_1[g]]  =inputslist[g][0][:,:args.seq_len,:]
               inp_dict[speech_inputs_2[g]]  =inputslist[g][0][:,s_len:s_len+args.seq_len,:]
               inp_dict[speech_inputs_mix[g]]=inputslist[g][0][:,-s_len:-s_len+args.seq_len,:]
               angle     = inputslist[0][1][:,-s_len:-s_len+args.seq_len,:]
-              
-            
+
+
             loss_value,_, mask_state_value = sess.run([losses, apply_gradient_op,mask_state], feed_dict=inp_dict)
 
             for g in xrange(args.num_gpus):
@@ -542,11 +543,13 @@ def main():
               logging.warning(log_str)
               loss_sum = 0;
 
-            elif(0==step % 5001):
+            elif(0==step % 5000):
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-              
+
               mk_audio(outp1,angle,step,1)
               mk_audio(outp2,angle,step,2)
+              print("train output1 shape", outp1.shape)
+              print("train output2 shape", outp2.shape)
 
               #========================
               inp_dict={}
@@ -557,16 +560,20 @@ def main():
                 angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
+              print("test output1 shape", outp1.shape)
+              print("test output2 shape", outp2.shape)
 
-              mk_audio(outp1,angle_test,step,"1_test_")
-              mk_audio(outp2,angle_test,step,"2_test_")
+              mk_audio(outp1,angle_test,step,"1_test")
+              mk_audio(outp2,angle_test,step,"2_test")
 
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
               outp2=inputslist[0][2]
               angle2=inputslist[0][3]
-              mk_audio(outp1,angle1,step,"_raw_train_",3)
-              mk_audio(outp2,angle2,step,"_raw_test_",3)
+              print("raw output1 shape", outp1.shape)
+              print("raw output2 shape", outp2.shape)
+              mk_audio(outp1,angle1,step,"_raw_train",3)
+              mk_audio(outp2,angle2,step,"_raw_test",3)
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)
