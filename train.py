@@ -8,7 +8,6 @@ http://homepages.inf.ed.ac.uk/jyamagis/page3/page58/page58.html
 from __future__ import print_function
 
 import argparse
-from datetime import datetime
 import json
 import os
 import sys
@@ -17,7 +16,6 @@ import time
 import logging
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.client import timeline
 import ctypes
 import librosa
 
@@ -31,7 +29,6 @@ LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 2000
 NUM_STEPS = int(1e6)
 LEARNING_RATE = 1e-4
-STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 SAMPLE_SIZE = 100000
 L2_REGULARIZATION_STRENGTH = 0
 SILENCE_THRESHOLD = 0.3
@@ -45,20 +42,6 @@ SAMPLE_RATE = 16000
 BITRATE = 16000
 LENGTH = N_SECS*BITRATE
 NUM_GPU = 1
-
-def mk_audio(output,angle,filename):
-    fs= 16000
-    framelen= 512
-    frameshift = 256
-
-    output = np.reshape(output, (output.shape[1], output.shape[2]))
-    output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
-    output_re = output * np.exp(1j * output_angle)
-    output_re = np.transpose(output_re)
-    x_r=librosa.core.istft(output_re, frameshift, framelen)
-    librosa.output.write_wav(filename, x_r,fs)
-    return
-
 
 
 
@@ -543,8 +526,8 @@ def main():
             if (0==step % 5000):
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
-              mk_audio(outp1,angle,"spk1_"+str(step)+".wav")
-              mk_audio(outp2,angle,"spk2_"+str(step)+".wav")
+              mk_audio(outp1,angle,args.sample_rate,"spk1_"+str(step)+".wav")
+              mk_audio(outp2,angle,args.sample_rate,"spk2_"+str(step)+".wav")
 
               #========================
               inp_dict={}
@@ -556,15 +539,15 @@ def main():
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
-              mk_audio(outp1,angle_test,"spk1_test_"+str(step)+".wav")
-              mk_audio(outp2,angle_test,"spk2_test_"+str(step)+".wav")
+              mk_audio(outp1,angle_test,args.sample_rate,"spk1_test_"+str(step)+".wav")
+              mk_audio(outp2,angle_test,args.sample_rate,"spk2_test_"+str(step)+".wav")
 
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
               outp2=inputslist[0][2]
               angle2=inputslist[0][3]
-              mk_audio(outp1,angle1,"raw_train_"+str(step)+".wav")
-              mk_audio(outp2,angle2,"raw_test_"+str(step)+".wav")
+              mk_audio(outp1,angle1,args.sample_rate,"raw_train_"+str(step)+".wav")
+              mk_audio(outp2,angle2,args.sample_rate,"raw_test_"+str(step)+".wav")
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)

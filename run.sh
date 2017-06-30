@@ -5,8 +5,8 @@
 #	--data_dir=./mix/out \
 
 python train.py \
-	--data_dir=mix/train \
-	--test_dir=mix/test \
+	--data_dir=mix\
+	--test_dir=mix\
         --big_frame_size=8 \
         --frame_size=2 \
         --q_levels=256 \
