@@ -60,6 +60,20 @@ def wav2spec(filename):
     return amplitude,angle
 
 
+def mk_audio(output,angle,fs,filename):
+    framelen= 512
+    frameshift = 256
+
+    output = np.reshape(output, (output.shape[1], output.shape[2]))
+    output_angle = np.reshape(angle, (angle.shape[1], angle.shape[2]))
+    output_re = output * np.exp(1j * output_angle)
+    output_re = np.transpose(output_re)
+    x_r=librosa.core.istft(output_re, frameshift, framelen)
+
+    maxv = np.iinfo(np.int16).max
+    librosa.output.write_wav(filename, (x_r * maxv).astype(np.int16), fs)
+    return
+
 
 def load_generic_audio(directory, sample_rate):
     '''Generator that yields audio waveforms from the directory.'''
