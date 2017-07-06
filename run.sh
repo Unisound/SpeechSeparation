@@ -6,7 +6,7 @@
 
 python train.py \
 	--data_dir=mix\
-	--test_dir=mix3\
+	--test_dir=mix\
         --big_frame_size=8 \
         --frame_size=2 \
         --q_levels=256 \
@@ -18,4 +18,4 @@ python train.py \
         --batch_size=1 \
 	--optimizer=adam \
 	--num_gpus=1 \
-        --logdir_root=twolog
+        --logdir_root=newlog

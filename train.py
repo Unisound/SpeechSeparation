@@ -152,6 +152,7 @@ def get_arguments():
     #parser.add_argument('--exp', help='Experiment name',
     #        type=str, required=False, default='_')
     '''
+##############Add Arguments to Parser#################
     parser.add_argument('--seq_len', help='How many samples to include in each\
             Truncated BPTT pass', type=check_positive, required=True)
     parser.add_argument('--big_frame_size', help='How many samples per big frame',\
@@ -169,7 +170,7 @@ def get_arguments():
             type=check_positive, choices=xrange(1,6), required=True)
     parser.add_argument('--emb_size', help='Size of embedding layer (> 0)',
             type=check_positive, required=True)  # different than two_tier
-###############SAMPLE_RNN################
+###############################
     return parser.parse_args()
 
 
@@ -451,9 +452,8 @@ def main():
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
     writer.add_graph(tf.get_default_graph())
+    summary_loss = tf.summary.scalar("loss", loss)
     run_metadata = tf.RunMetadata()
-    tf.summary.scalar("loss", loss)
-    summaries = tf.summary.merge_all()
 
     # Set up session
     #tf_config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=False)
@@ -513,6 +513,7 @@ def main():
               inp_dict[speech_inputs_mix[g]]=inputslist[g][0][:,-s_len:-s_len+args.seq_len,:]
 
 
+            
             loss_value,_, mask_state_value = sess.run([losses, apply_gradient_op,mask_state], feed_dict=inp_dict)
 
             for g in xrange(args.num_gpus):
@@ -530,10 +531,9 @@ def main():
               loss_sum = 0;
 
             if (0==step % 2000):
-              summary,outp1,outp2 = sess.run([summaries,output1,output2], feed_dict=inp_dict)
+              summary = sess.run(summary_loss)
               writer.add_summary(summary, step)
 
-              #========================
               inp_dict={}
               inp_dict[speech_inputs_1[0]] = inputslist[0][2][:,:args.seq_len,:]
               inp_dict[speech_inputs_2[0]] = inputslist[0][2][:,s_len:s_len+args.seq_len,:]
@@ -542,15 +542,16 @@ def main():
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
-              mk_audio(outp1,angle_test,args.sample_rate,"spk1_test_"+str(step)+".wav")
-              mk_audio(outp2,angle_test,args.sample_rate,"spk2_test_"+str(step)+".wav")
+              x_r = mk_audio(outp1,angle_test,args.sample_rate,"spk1_test_"+str(step)+".wav")
+              y_r = mk_audio(outp2,angle_test,args.sample_rate,"spk2_test_"+str(step)+".wav")
+              merged = sess.run(tf.summary.merge(
+                    [tf.summary.audio('speaker1_' + str(step), x_r[None, :], args.sample_rate),
+                     tf.summary.audio('speaker2_' + str(step), y_r[None, :], args.sample_rate)]
+                ))
+              writer.add_summary(merged, step)
 
-
-              outp1=inputslist[0][0]
-              angle1=inputslist[0][1]
               outp2=inputslist[0][2]
-              angle2=inputslist[0][3]
-              mk_audio(outp1,angle1,args.sample_rate,"raw_train_"+str(step)+".wav")
+              angle2=inputslist[0][3]              
               mk_audio(outp2,angle2,args.sample_rate,"raw_test_"+str(step)+".wav")
 
 
