@@ -7,6 +7,10 @@ http://homepages.inf.ed.ac.uk/jyamagis/page3/page58/page58.html
 
 from __future__ import print_function
 
+from model import SpeechSeparation
+from audio import AudioReader,mk_audio
+from ops import optimizer_factory
+
 import argparse
 import json
 import os
@@ -19,7 +23,6 @@ import tensorflow as tf
 import ctypes
 import librosa
 
-from speech_separation import SpeechSeparation, AudioReader, optimizer_factory
 
 # hyper parameters
 NUM_OF_FREQUENCY_POINTS = 257
@@ -42,8 +45,6 @@ SAMPLE_RATE = 16000
 BITRATE = 16000
 LENGTH = N_SECS*BITRATE
 NUM_GPU = 1
-
-
 
 def get_arguments():
     def _str_to_bool(s):
@@ -278,10 +279,7 @@ def average_gradients(tower_grads):
      List of pairs of (gradient, variable) where the gradient has been averaged
      across all towers.
   """
-  #print("================================")
-  #for name in tower_grads:
-  #  for name2 in name:
-  #   print(name2)
+
   average_grads = []
   for grad_and_vars in zip(*tower_grads):
     # Note that each grad_and_vars looks like the following:
@@ -323,7 +321,8 @@ def main():
     restore_from = directories['restore_from']
 
     # Even if we restored the model, we will treat it as new training
-    # if the trained model is written into an arbitrary location.
+    # if the trained model is written into a location that's different from 
+    # logdir.
     is_overwritten_training = logdir != restore_from
 
     # Create coordinator.
@@ -351,6 +350,8 @@ def main():
     #'''
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
+    # Create a variable to count the number of steps. This equals the
+    # number of batches processed * FLAGS.num_gpus.
     global_step = tf.get_variable('global_step',
 		[], initializer = tf.constant_initializer(0), trainable=False)
 
@@ -397,6 +398,8 @@ def main():
       final_big_frame_state.append(net.cell.zero_state(net.batch_size, tf.float32))
       final_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
 
+
+    # Calculate the gradients for each model tower.
     with tf.variable_scope(tf.get_variable_scope()):
       for i in xrange(args.num_gpus):
         with tf.device('/gpu:%d' % i):
@@ -422,9 +425,9 @@ def main():
             for name in trainable:
               print(name)
 
+
+            # Calculate the gradients for the batch of data on this tower.
             gradients = optim.compute_gradients(loss,trainable)
-      				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
-      				#aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE)
             print("==========================")
             for name in gradients:
               print(name)
@@ -449,6 +452,7 @@ def main():
     writer = tf.summary.FileWriter(logdir)
     writer.add_graph(tf.get_default_graph())
     run_metadata = tf.RunMetadata()
+    tf.summary.scalar("loss", loss)
     summaries = tf.summary.merge_all()
 
     # Set up session
@@ -479,6 +483,8 @@ def main():
               "the previous model.")
         raise
 
+
+###################
     # Start the queue runners.
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     reader.start_threads(sess)
@@ -496,6 +502,7 @@ def main():
 
 
             inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
+
             s_len=inputslist[0][0].shape[1]/3
             if(args.seq_len > s_len):
                 logging.error("args.seq_len %d > s_len %d", args.seq_len, s_len)
@@ -504,7 +511,6 @@ def main():
               inp_dict[speech_inputs_1[g]]  =inputslist[g][0][:,:args.seq_len,:]
               inp_dict[speech_inputs_2[g]]  =inputslist[g][0][:,s_len:s_len+args.seq_len,:]
               inp_dict[speech_inputs_mix[g]]=inputslist[g][0][:,-s_len:-s_len+args.seq_len,:]
-              angle     = inputslist[0][1][:,-s_len:-s_len+args.seq_len,:]
 
 
             loss_value,_, mask_state_value = sess.run([losses, apply_gradient_op,mask_state], feed_dict=inp_dict)
@@ -523,24 +529,22 @@ def main():
               logging.warning(log_str)
               loss_sum = 0;
 
-            if (0==step % 5000):
-              outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-
-              mk_audio(outp1,angle,args.sample_rate,"spk1_"+str(step)+".wav")
-              mk_audio(outp2,angle,args.sample_rate,"spk2_"+str(step)+".wav")
+            if (0==step % 2000):
+              summary,outp1,outp2 = sess.run([summaries,output1,output2], feed_dict=inp_dict)
+              writer.add_summary(summary, step)
 
               #========================
               inp_dict={}
-              for g in xrange(args.num_gpus):
-                inp_dict[speech_inputs_1[g]] = inputslist[g][2][:,:args.seq_len,:]
-                inp_dict[speech_inputs_2[g]] = inputslist[g][2][:,s_len:s_len+args.seq_len,:]
-                inp_dict[speech_inputs_mix[g]] = inputslist[g][2][:,-s_len:-s_len+args.seq_len,:]
-                angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
+              inp_dict[speech_inputs_1[0]] = inputslist[0][2][:,:args.seq_len,:]
+              inp_dict[speech_inputs_2[0]] = inputslist[0][2][:,s_len:s_len+args.seq_len,:]
+              inp_dict[speech_inputs_mix[0]] = inputslist[0][2][:,-s_len:-s_len+args.seq_len,:]
+              angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
 
               outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
 
               mk_audio(outp1,angle_test,args.sample_rate,"spk1_test_"+str(step)+".wav")
               mk_audio(outp2,angle_test,args.sample_rate,"spk2_test_"+str(step)+".wav")
+
 
               outp1=inputslist[0][0]
               angle1=inputslist[0][1]
@@ -548,6 +552,8 @@ def main():
               angle2=inputslist[0][3]
               mk_audio(outp1,angle1,args.sample_rate,"raw_train_"+str(step)+".wav")
               mk_audio(outp2,angle2,args.sample_rate,"raw_test_"+str(step)+".wav")
+
+
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)
