@@ -9,9 +9,9 @@ from __future__ import print_function
 
 from utils import get_arguments, save, load, validate_directories, average_gradients
 from model import SpeechSeparation
-from audio import AudioReader,mk_audio
+from audio import AudioReader
 from ops import optimizer_factory
-from data_input import create_inputdict
+from data_input import create_inputdict,predict
 
 
 import time
@@ -64,16 +64,13 @@ def main():
 ##########Create model#########
     net =  SpeechSeparation(
     batch_size=args.batch_size,
-    frame_size=args.frame_size,
-    q_levels=args.q_levels,
     rnn_type=args.rnn_type,
     dim=args.dim,
     n_rnn=args.n_rnn,
     seq_len=args.seq_len,
-    num_of_frequency_points=args.num_of_frequency_points,
-    emb_size=args.emb_size)
-########Multi GPU###########
-    #'''
+    num_of_frequency_points=args.num_of_frequency_points)
+
+
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
     # Create a variable to count the number of steps. This equals the
@@ -198,8 +195,6 @@ def main():
         raise
 
 
-###################
-    # Start the queue runners.
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     reader.start_threads(sess)
 
@@ -211,9 +206,10 @@ def main():
             loss_sum = 0
             start_time = time.time()
 
-            inp_dict = create_inputdict(sess,audio_batch,args,speech_inputs_1,
+    	    inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
+            inp_dict = create_inputdict(inputslist,args,speech_inputs_1,
                 speech_inputs_2,speech_inputs_mix)
-            ##########out results#########
+
             loss_value,_= sess.run([losses, apply_gradient_op], feed_dict=inp_dict)
 
             for g in xrange(args.num_gpus):
@@ -230,26 +226,12 @@ def main():
               logging.warning(log_str)
 
             if (0==step % 20):
-
-              inp_dict={}
-              inp_dict[speech_inputs_1[0]] = inputslist[0][2][:,:args.seq_len,:]
-              inp_dict[speech_inputs_2[0]] = inputslist[0][2][:,s_len:s_len+args.seq_len,:]
-              inp_dict[speech_inputs_mix[0]] = inputslist[0][2][:,-s_len:-s_len+args.seq_len,:]
-              angle_test= inputslist[0][3][:,-s_len:-s_len+args.seq_len,:]
-
-              outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-
-              x_r = mk_audio(outp1,angle_test,args.sample_rate,"spk1_test_"+str(step)+".wav")
-              y_r = mk_audio(outp2,angle_test,args.sample_rate,"spk2_test_"+str(step)+".wav")
+              x_r,y_r = predict(sess, inputslist,args,step,output1,output2,speech_inputs_1,speech_inputs_2,speech_inputs_mix)
               merged = sess.run(tf.summary.merge(
                     [tf.summary.audio('speaker1_' + str(step), x_r[None, :], args.sample_rate),
                      tf.summary.audio('speaker2_' + str(step), y_r[None, :], args.sample_rate)]
                 ))
               writer.add_summary(merged, step)
-
-              outp2=inputslist[0][2]
-              angle2=inputslist[0][3]              
-              mk_audio(outp2,angle2,args.sample_rate,"raw_test_"+str(step)+".wav")
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)

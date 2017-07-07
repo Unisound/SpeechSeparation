@@ -11,7 +11,6 @@ import tensorflow as tf
 NUM_OF_FREQUENCY_POINTS = 257
 BATCH_SIZE = 1
 DATA_DIRECTORY = './pinao-corpus'
-LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 2000
 NUM_STEPS = int(1e6)
 LEARNING_RATE = 1e-4
@@ -37,7 +36,7 @@ def get_arguments():
                              'boolean, got {}'.format(s))
         return {'true': True, 'false': False}[s.lower()]
 
-    parser = argparse.ArgumentParser(description='WaveNet example network')
+    parser = argparse.ArgumentParser(description='PIT example network')
     parser.add_argument('--num_gpus', type=int, default=NUM_GPU,
                         help='num of gpus.. Default: ' + str(NUM_GPU) + '.')
     parser.add_argument('--batch_size', type=int, default=BATCH_SIZE,
@@ -49,7 +48,7 @@ def get_arguments():
                         help='The directory containing the VCTK corpus.')
     parser.add_argument('--test_dir', type=str, default=DATA_DIRECTORY,
                         help='The directory containing the VCTK corpus.')
-    parser.add_argument('--logdir', type=str, default=None,
+    parser.add_argument('--logdir', type=str, default=None,required=True,
                         help='Directory in which to store the logging '
                         'information for TensorBoard. '
                         'If the model already exists, it will restore '
@@ -87,8 +86,6 @@ def get_arguments():
                         default=MOMENTUM, help='Specify the momentum to be '
                         'used by sgd or rmsprop optimizer. Ignored by the '
                         'adam optimizer. Default: ' + str(MOMENTUM) + '.')
-    parser.add_argument('--histograms', type=_str_to_bool, default=False,
-                        help='Whether to store histogram summaries. Default: False')
     parser.add_argument('--gc_channels', type=int, default=None,
                         help='Number of global condition channels. Default: None. Expecting: Int')
     parser.add_argument('--max_checkpoints', type=int, default=MAX_TO_KEEP,
@@ -120,33 +117,18 @@ def get_arguments():
         if fvalue < 0 or fvalue > 1:
              raise argparse.ArgumentTypeError("%s is not in [0, 1] interval!" % value)
         return fvalue
-    '''
-    # TODO: Fix the descriptions
-    # Hyperparameter arguements:
-    #parser.add_argument('--exp', help='Experiment name',
-    #        type=str, required=False, default='_')
-    '''
-##############Add Arguments to Parser#################
+
     parser.add_argument('--seq_len', help='How many samples to include in each\
             Truncated BPTT pass', type=check_positive, required=True)
-    parser.add_argument('--frame_size', help='How many samples per frame',\
-            type=check_positive, required=True)
-    parser.add_argument('--q_levels', help='Number of bins for quantization of\
-            audio samples. Should be 256 for mu-law.',\
-            type=check_positive, required=True)
     parser.add_argument('--rnn_type', help='GRU or LSTM', choices=['LSTM', 'GRU'],\
             required=True)
     parser.add_argument('--dim', help='Dimension of RNN and MLPs',\
             type=check_positive, required=True)
     parser.add_argument('--n_rnn', help='Number of layers in the stacked RNN',
             type=check_positive, choices=xrange(1,6), required=True)
-    parser.add_argument('--emb_size', help='Size of embedding layer (> 0)',
-            type=check_positive, required=True)  # different than two_tier
-###############################
     return parser.parse_args()
 
 
-###############Save and Load################
 def save(saver, sess, logdir, step):
     model_name = 'model.ckpt'
     checkpoint_path = os.path.join(logdir, model_name)
@@ -179,19 +161,9 @@ def load(saver, sess, logdir):
         print(" No checkpoint found.")
         return None
 
-###############Helper Functions################
-
-def get_default_logdir(logdir_root):
-    logdir = os.path.join(logdir_root, 'train')
-    return logdir
 
 def validate_directories(args):
     """Validate and arrange directory related arguments."""
-
-    # Validation
-    if args.logdir and args.logdir_root:
-        raise ValueError("--logdir and --logdir_root cannot be "
-                         "specified at the same time.")
 
     if args.logdir and args.restore_from:
         raise ValueError(
@@ -203,15 +175,7 @@ def validate_directories(args):
             "only --logdir to just continue the training from the last "
             "checkpoint.")
 
-    # Arrangement
-    logdir_root = args.logdir_root
-    if logdir_root is None:
-        logdir_root = LOGDIR_ROOT
-
     logdir = args.logdir
-    if logdir is None:
-        logdir = get_default_logdir(logdir_root)
-        print('Using default logdir: {}'.format(logdir))
 
     restore_from = args.restore_from
     if restore_from is None:
@@ -221,7 +185,6 @@ def validate_directories(args):
 
     return {
         'logdir': logdir,
-        'logdir_root': args.logdir_root,
         'restore_from': restore_from
     }
 
