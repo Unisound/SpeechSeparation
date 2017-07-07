@@ -72,7 +72,7 @@ def mk_audio(output,angle,fs,filename):
 
     maxv = np.iinfo(np.int16).max
     librosa.output.write_wav(filename, (x_r * maxv).astype(np.int16), fs)
-    return
+    return x_r
 
 
 def load_generic_audio(directory, sample_rate):
@@ -191,14 +191,20 @@ class AudioReader(object):
             #for audio_copy in audio_list:
                 #audio = copy.deepcopy(audio_copy)
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
-            for amplitude, angle, _ in iterator:
+            for amplitude, angle, trainfile in iterator:
                 if self.coord.should_stop():
                     stop = True
                     break
 
                 testfile = self.test_files[random.randint(0, (len(self.test_files) - 1))]
                 amplitude_test, angle_test = wav2spec(testfile)
+		#print(testfile)
+            	#np.savetxt(os.path.basename(testfile)+"amplitude.csv", amplitude_test,fmt="%.3f", delimiter=",")
+            	#np.savetxt(os.path.basename(testfile)+"angle.csv", angle_test,fmt="%.3f", delimiter=",")
 
+		#print(trainfile + "train")
+            	#np.savetxt(os.path.basename(trainfile)+"-train-amplitude.csv", amplitude,fmt="%.3f", delimiter=",")
+            	#np.savetxt(os.path.basename(trainfile)+"-train-angle.csv", angle,fmt="%.3f", delimiter=",")
                 sess.run(self.enqueue,
                   feed_dict={self.sample_placeholder: amplitude,
                              self.angle_placeholder: angle,
