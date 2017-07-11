@@ -6,6 +6,7 @@ import os
 import sys
 import argparse
 import tensorflow as tf
+import logging
 
 # hyper parameters
 NUM_OF_FREQUENCY_POINTS = 257
@@ -224,3 +225,25 @@ def average_gradients(tower_grads):
     grad_and_var = (grad, v)
     average_grads.append(grad_and_var)
   return average_grads
+
+
+def create_inputdict(inputslist,args,speech_1,speech_2,speech_mix,test=False):
+    inp_dict={}
+
+    s_len=inputslist[0][0].shape[1]/3
+    seq_len=args.seq_len
+
+    if test:
+        inp_dict[speech_1[0]] = inputslist[0][2][:,:seq_len,:]
+        inp_dict[speech_2[0]] = inputslist[0][2][:,s_len:s_len+seq_len,:]
+        inp_dict[speech_mix[0]] = inputslist[0][2][:,-s_len:-s_len+seq_len,:]
+        angle_test= inputslist[0][3][:,-s_len:-s_len+seq_len,:]
+        return (angle_test,inp_dict)
+    else:
+        if(seq_len > s_len):
+            logging.error("args.seq_len %d > s_len %d", seq_len, s_len)
+        for g in xrange(args.num_gpus):
+            inp_dict[speech_1[g]]  =inputslist[g][0][:,:seq_len,:]
+            inp_dict[speech_2[g]]  =inputslist[g][0][:,s_len:s_len+seq_len,:]
+            inp_dict[speech_mix[g]]=inputslist[g][0][:,-s_len:-s_len+seq_len,:]
+        return inp_dict
