@@ -1,5 +1,8 @@
 import tensorflow as tf
+
 from tensorflow.python.ops import math_ops
+from ops import optimizer_factory
+from utils import average_gradients
 
 class SpeechSeparation(object):
     def _create_network_speechrnn(self,
@@ -38,7 +41,6 @@ class SpeechSeparation(object):
 
     def loss_SampleRnn(self,speech_inputs_1,speech_inputs_2,
 	speech_inputs_mix,
-	train_input_batch_rnn,
 	l2_regularization_strength=None):
 
 	mask_num_steps = 256
@@ -64,8 +66,8 @@ class SpeechSeparation(object):
             reduced_loss =reduced_loss_1+reduced_loss_2
 
             if l2_regularization_strength is None:
-                tf.summary.scalar('reduced_loss', reduced_loss)
-                return reduced_loss , output1,output2
+                summary = tf.summary.scalar('reduced_loss', reduced_loss)
+                return summary, reduced_loss , output1,output2
             else:
                 # L2 regularization for all trainable parameters
                 l2_loss = tf.add_n([tf.nn.l2_loss(v)
@@ -76,10 +78,9 @@ class SpeechSeparation(object):
                 total_loss = (reduced_loss +
                               l2_regularization_strength * l2_loss)
 
-                tf.summary.scalar('l2_loss', l2_loss)
-                tf.summary.scalar('total_loss', total_loss)
+                summary = tf.summary.scalar('total_loss', total_loss)
 
-                return total_loss, output1,output2
+                return summary, total_loss, output1,output2
 
 
     def __init__(self,
@@ -113,3 +114,77 @@ class SpeechSeparation(object):
                  [single_cell() for _ in range(self.n_rnn)])
           self.b_cell = tf.contrib.rnn.MultiRNNCell(
                  [single_cell() for _ in range(self.n_rnn)])
+
+    def initializer(self,net,args):
+      # Create optimizer (default is Adam)
+      optim = optimizer_factory[args.optimizer](
+                      learning_rate=args.learning_rate,
+                      momentum=args.momentum)
+
+          # Create a variable to count the number of steps. This equals the
+      # number of batches processed * FLAGS.num_gpus.
+      global_step = tf.get_variable('global_step',
+          [], initializer = tf.constant_initializer(0), trainable=False)
+
+      tower_grads = []
+      losses = []
+      speech_inputs_mix = []
+      speech_inputs_1 = []
+      speech_inputs_2 = []
+      padding = tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_batch_inputs",
+              dtype=tf.float32)
+
+      for i in xrange(args.num_gpus):
+        speech_inputs_2.append(padding)
+        speech_inputs_1.append(padding)
+        speech_inputs_mix.append(padding)
+
+      # Calculate the gradients for each model tower.
+      with tf.variable_scope(tf.get_variable_scope()):
+        for i in xrange(args.num_gpus):
+          with tf.device('/gpu:%d' % i):
+            with tf.name_scope('TOWER_%d' % (i)) as scope:
+              # Create model.
+              print("Creating model On Gpu:%d." % (i))
+              
+              summary, loss, output1, output2 = net.loss_SampleRnn(
+                  speech_inputs_1[i],
+                  speech_inputs_2[i],
+                  speech_inputs_mix[i],
+                  l2_regularization_strength=args.l2_regularization_strength)
+              
+              # Reuse variables for the nect tower.
+              tf.get_variable_scope().reuse_variables()
+
+              losses.append(loss)
+              trainable = tf.trainable_variables()
+              for name in trainable:
+                print(name)
+
+
+              # Calculate the gradients for the batch of data on this tower.
+              gradients = optim.compute_gradients(loss,trainable)
+              print("==========================")
+              for name in gradients:
+                print(name)
+              # Keep track of the gradients across all towers.
+              tower_grads.append(gradients)
+
+      # We must calculate the mean of each gradient. Note that this is the
+      # synchronization point across all towers.
+      grad_vars = average_gradients(tower_grads)
+
+      # UNKNOWN
+      grads, vars = zip(*grad_vars)
+      grads_clipped, _ = tf.clip_by_global_norm(grads, 5.0)
+      grad_vars = zip(grads_clipped, vars)
+
+      # Apply the gradients to adjust the shared variables.
+      apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step)
+
+      return (summary,output1,output2,
+        speech_inputs_1,speech_inputs_2,speech_inputs_mix,
+        losses,apply_gradient_op)

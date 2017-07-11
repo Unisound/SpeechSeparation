@@ -7,13 +7,10 @@ http://homepages.inf.ed.ac.uk/jyamagis/page3/page58/page58.html
 
 from __future__ import print_function
 
-from utils import get_arguments, save, load, validate_directories, average_gradients
+from utils import get_arguments, save, load
+from utils import validate_directories, create_inputdict
 from model import SpeechSeparation
-from audio import AudioReader
-from ops import optimizer_factory
-from data_input import create_inputdict,predict
-
-
+from audio import AudioReader, mk_audio
 import time
 import logging
 import numpy as np
@@ -61,7 +58,7 @@ def main():
             silence_threshold=silence_threshold)
         audio_batch = reader.dequeue(args.batch_size)
 
-##########Create model#########
+##########Create model and inputs#########
     net =  SpeechSeparation(
     batch_size=args.batch_size,
     rnn_type=args.rnn_type,
@@ -70,94 +67,12 @@ def main():
     seq_len=args.seq_len,
     num_of_frequency_points=args.num_of_frequency_points)
 
+    out = net.initializer(net,args)
+    summary, output1, output2, speech_inputs_1, speech_inputs_2, 
+      speech_inputs_mix, losses,apply_gradient_op = out
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
-    # Create a variable to count the number of steps. This equals the
-    # number of batches processed * FLAGS.num_gpus.
-    global_step = tf.get_variable('global_step',
-        [], initializer = tf.constant_initializer(0), trainable=False)
-
-
-    # Create optimizer (default is Adam)
-    optim = optimizer_factory[args.optimizer](
-                    learning_rate=args.learning_rate,
-                    momentum=args.momentum)
-    tower_grads = []
-    
-    
-    losses = []
-    speech_inputs_mix = []
-    speech_inputs_1 = []
-    speech_inputs_2 = []
-    train_input_batch_rnn = []
-
-    for i in xrange(args.num_gpus):
-      speech_inputs_2.append(tf.Variable(
-                tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
-                        trainable=False ,
-                name="speech_batch_inputs",
-                dtype=tf.float32))
-      speech_inputs_1.append(tf.Variable(
-                tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
-                        trainable=False ,
-                name="speech_batch_inputs",
-                dtype=tf.float32))
-      speech_inputs_mix.append(tf.Variable(
-                tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
-                        trainable=False ,
-                name="speech_batch_inputs",
-                dtype=tf.float32))
-      train_input_batch_rnn.append(tf.Variable(
-                tf.zeros([net.batch_size, net.seq_len,1]),
-                        trainable=False ,
-                name="input_batch_rnn",
-                dtype=tf.float32))
-
-    # Calculate the gradients for each model tower.
-    with tf.variable_scope(tf.get_variable_scope()):
-      for i in xrange(args.num_gpus):
-        with tf.device('/gpu:%d' % i):
-          with tf.name_scope('TOWER_%d' % (i)) as scope:
-            # Create model.
-            print("Creating model On Gpu:%d." % (i))
-            
-            loss, output1, output2 = net.loss_SampleRnn(
-                speech_inputs_1[i],
-                speech_inputs_2[i],
-                speech_inputs_mix[i],
-                train_input_batch_rnn[i],
-                        l2_regularization_strength=args.l2_regularization_strength)
-            
-            # Reuse variables for the nect tower.
-            tf.get_variable_scope().reuse_variables()
-
-            # UNKNOWN
-            losses.append(loss)
-            trainable = tf.trainable_variables()
-            for name in trainable:
-              print(name)
-
-
-            # Calculate the gradients for the batch of data on this tower.
-            gradients = optim.compute_gradients(loss,trainable)
-            print("==========================")
-            for name in gradients:
-              print(name)
-            # Keep track of the gradients across all towers.
-            tower_grads.append(gradients)
-
-    # We must calculate the mean of each gradient. Note that this is the
-    # synchronization point across all towers.
-    grad_vars = average_gradients(tower_grads)
-
-    # UNKNOWN
-    grads, vars = zip(*grad_vars)
-    grads_clipped, _ = tf.clip_by_global_norm(grads, 5.0)
-    grad_vars = zip(grads_clipped, vars)
-
-    # Apply the gradients to adjust the shared variables.
-    apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step)
 
 
     # Set up session
@@ -179,7 +94,8 @@ def main():
 
 
     # Saver for storing checkpoints of the model.
-    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=args.max_checkpoints)
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), 
+        max_to_keep=args.max_checkpoints)
 
     try:
         saved_global_step = load(saver, sess, restore_from)
@@ -210,28 +126,48 @@ def main():
             inp_dict = create_inputdict(inputslist,args,speech_inputs_1,
                 speech_inputs_2,speech_inputs_mix)
 
-            loss_value,_= sess.run([losses, apply_gradient_op], feed_dict=inp_dict)
+            summ, loss_value,_= sess.run([summary,losses, apply_gradient_op], 
+                feed_dict=inp_dict)
 
             for g in xrange(args.num_gpus):
-              loss_sum += loss_value[g]/args.num_gpus
+                loss_sum += loss_value[g]/args.num_gpus
             
+            writer.add_summary(summ, step)
+
             duration = time.time() - start_time
 
             if(step<100):
-              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')%(step, loss_sum, duration)
-              logging.warning(log_str)
+                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')
+                  %(step, loss_sum, duration)
+                logging.warning(log_str)
 
             elif(0==step % 100):
-              log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')%(step, loss_sum/100, duration)
-              logging.warning(log_str)
+                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')
+                  %(step, loss_sum/100, duration)
+                logging.warning(log_str)
 
             if (0==step % 20):
-              x_r,y_r = predict(sess, inputslist,args,step,output1,output2,speech_inputs_1,speech_inputs_2,speech_inputs_mix)
-              merged = sess.run(tf.summary.merge(
-                    [tf.summary.audio('speaker1_' + str(step), x_r[None, :], args.sample_rate),
-                     tf.summary.audio('speaker2_' + str(step), y_r[None, :], args.sample_rate)]
+                angle_test, inp_dict = create_inputdict(inputslist, args, 
+                    speech_inputs_1, speech_inputs_2, speech_inputs_mix, 
+                      test=True)
+
+                outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
+                x_r = mk_audio(outp1,angle_test,args.sample_rate,
+                        "spk1_test_"+str(step)+".wav")
+                y_r = mk_audio(outp2,angle_test,args.sample_rate,
+                        "spk2_test_"+str(step)+".wav")
+
+                outp2=inputslist[0][2]
+                angle2=inputslist[0][3]              
+                mk_audio(outp2,angle2,args.sample_rate,
+                    "raw_test_"+str(step)+".wav")
+                merged = sess.run(tf.summary.merge(
+                    [tf.summary.audio('speaker1_' + str(step), x_r[None, :], 
+                        args.sample_rate, max_outputs=1),
+                     tf.summary.audio('speaker2_' + str(step), y_r[None, :], 
+                        args.sample_rate, max_outputs=1)]
                 ))
-              writer.add_summary(merged, step)
+                writer.add_summary(merged, step)
 
             if step % args.checkpoint_every == 0:
                 save(saver, sess, logdir, step)
