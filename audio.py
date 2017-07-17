@@ -6,9 +6,7 @@ import threading
 
 import librosa
 import sys
-import copy
 import numpy as np
-from numpy import linalg
 import tensorflow as tf
 import scipy
 
@@ -117,7 +115,8 @@ class AudioReader(object):
                  gc_enabled,
                  sample_size=None,
                  silence_threshold=None,
-                 queue_size=32):
+                 queue_size=32,
+                 seq_len=256):
         self.audio_dir = audio_dir
         self.sample_rate = sample_rate
         self.coord = coord
@@ -188,8 +187,7 @@ class AudioReader(object):
         #print(type(audio_list[0]))
         #print(type(audio_list[0][0]))
         while not stop:
-            #for audio_copy in audio_list:
-                #audio = copy.deepcopy(audio_copy)
+
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for amplitude, angle, trainfile in iterator:
                 if self.coord.should_stop():
@@ -197,7 +195,17 @@ class AudioReader(object):
                     break
 
                 testfile = self.test_files[random.randint(0, (len(self.test_files) - 1))]
-                amplitude_test, angle_test = wav2spec(testfile)
+                pre_amplitude_test, angle_test = wav2spec(testfile)
+                seq_len = 256
+                s_len = pre_amplitude_test.shape[0] //3
+                X_1 = pre_amplitude_test[:s_len,:]
+                X_2 = pre_amplitude_test[s_len:s_len*2,:]
+                theta_1 = angle_test[:s_len,:]
+                theta_2 = angle_test[s_len:s_len*2,:]
+                theta_y = angle_test[-s_len:,:]
+                X_1_new = X_1*(np.cos(theta_y-theta_1))
+                X_2_new = X_2*(np.cos(theta_y-theta_2))
+                amplitude_test = np.concatenate((X_1_new,X_2_new,pre_amplitude_test[-s_len:,:]))
 		#print(testfile)
             	#np.savetxt(os.path.basename(testfile)+"amplitude.csv", amplitude_test,fmt="%.3f", delimiter=",")
             	#np.savetxt(os.path.basename(testfile)+"angle.csv", angle_test,fmt="%.3f", delimiter=",")

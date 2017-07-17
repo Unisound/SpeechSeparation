@@ -68,8 +68,7 @@ def main():
     num_of_frequency_points=args.num_of_frequency_points)
 
     out = net.initializer(net,args)
-    summary, output1, output2, speech_inputs_1, speech_inputs_2, 
-      speech_inputs_mix, losses,apply_gradient_op = out
+    summary, output1, output2, speech_inputs_1, speech_inputs_2, speech_inputs_mix, losses,apply_gradient_op = out
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
@@ -125,6 +124,8 @@ def main():
     	    inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
             inp_dict = create_inputdict(inputslist,args,speech_inputs_1,
                 speech_inputs_2,speech_inputs_mix)
+	    
+	    print("inp_dict is:",inp_dict)
 
             summ, loss_value,_= sess.run([summary,losses, apply_gradient_op], 
                 feed_dict=inp_dict)
@@ -137,16 +138,16 @@ def main():
             duration = time.time() - start_time
 
             if(step<100):
-                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')
+                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step') \
                   %(step, loss_sum, duration)
                 logging.warning(log_str)
 
             elif(0==step % 100):
-                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step')
+                log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step') \
                   %(step, loss_sum/100, duration)
                 logging.warning(log_str)
 
-            if (0==step % 20):
+            if (0==step % 2000):
                 angle_test, inp_dict = create_inputdict(inputslist, args, 
                     speech_inputs_1, speech_inputs_2, speech_inputs_mix, 
                       test=True)

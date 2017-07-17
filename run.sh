@@ -13,5 +13,5 @@ python train.py \
         --seq_len=256 \
         --batch_size=1 \
 	--optimizer=adam \
-	--num_gpus=1 \
-        --logdir=newlog
+	--num_gpus=2 \
+        --logdir=newnewlog

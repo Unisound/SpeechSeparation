@@ -6,7 +6,6 @@ from utils import average_gradients
 
 class SpeechSeparation(object):
     def _create_network_speechrnn(self,
-			num_steps,
 			speech_inputs_mix):
         with tf.variable_scope('SEEPCH_RNN_LAYER'):
           speech_outputs = []
@@ -45,13 +44,15 @@ class SpeechSeparation(object):
 
 	mask_num_steps = 256
 
-	mask_outputs = self._create_network_speechrnn(mask_num_steps, speech_inputs_mix)
+	mask_outputs = self._create_network_speechrnn(speech_inputs_mix)
         mask_1,mask_2=tf.split(mask_outputs,2, 2)
         output1 = speech_inputs_mix * mask_1
         output2 = speech_inputs_mix * mask_2
+        tmp = output1
 
         with tf.name_scope('loss'):
             #mask_num_steps = self.num_of_frequency_points-1
+            # only take 1 frame
             mask_num_steps = 256
             target_1    =tf.reshape(speech_inputs_1, [self.batch_size*mask_num_steps, -1])
             target_2    =tf.reshape(speech_inputs_2, [self.batch_size*mask_num_steps, -1])
@@ -60,13 +61,30 @@ class SpeechSeparation(object):
 
             loss_1 = tf.losses.mean_squared_error(labels=target_1, predictions=prediction_1) 
             loss_2 = tf.losses.mean_squared_error(labels=target_2, predictions=prediction_2) 
+
+            loss_3 = tf.losses.mean_squared_error(labels=target_2, predictions=prediction_1) 
+            loss_4 = tf.losses.mean_squared_error(labels=target_1, predictions=prediction_2) 
              
             reduced_loss_1 = tf.reduce_mean(loss_1)
             reduced_loss_2 = tf.reduce_mean(loss_2)
             reduced_loss =reduced_loss_1+reduced_loss_2
+            #reduced_loss_a =reduced_loss_1+reduced_loss_2
+
+            #reduced_loss_3 = tf.reduce_mean(loss_3)
+            #reduced_loss_4 = tf.reduce_mean(loss_4)
+            #reduced_loss_b =reduced_loss_3+reduced_loss_4
+
+            #reduced_loss = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: reduced_loss_b, lambda: reduced_loss_a)  
+            #output1 = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: output2, lambda: output1)  
+            #output2 = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: tmp, lambda: output2) 
+            #reduced_loss = tf.Print(reduced_loss,[reduced_loss,reduced_loss_a,reduced_loss_b],
+            #  message="The losses are:")
 
             if l2_regularization_strength is None:
-                summary = tf.summary.scalar('reduced_loss', reduced_loss)
+                summary = tf.summary.scalar('loss', reduced_loss)
                 return summary, reduced_loss , output1,output2
             else:
                 # L2 regularization for all trainable parameters
@@ -78,7 +96,7 @@ class SpeechSeparation(object):
                 total_loss = (reduced_loss +
                               l2_regularization_strength * l2_loss)
 
-                summary = tf.summary.scalar('total_loss', total_loss)
+                summary = tf.summary.scalar('loss', total_loss)
 
                 return summary, total_loss, output1,output2
 
