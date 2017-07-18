@@ -193,19 +193,21 @@ class AudioReader(object):
                 if self.coord.should_stop():
                     stop = True
                     break
-
                 testfile = self.test_files[random.randint(0, (len(self.test_files) - 1))]
-                pre_amplitude_test, angle_test = wav2spec(testfile)
-                seq_len = 256
-                s_len = pre_amplitude_test.shape[0] //3
-                X_1 = pre_amplitude_test[:s_len,:]
-                X_2 = pre_amplitude_test[s_len:s_len*2,:]
-                theta_1 = angle_test[:s_len,:]
-                theta_2 = angle_test[s_len:s_len*2,:]
-                theta_y = angle_test[-s_len:,:]
-                X_1_new = X_1*(np.cos(theta_y-theta_1))
-                X_2_new = X_2*(np.cos(theta_y-theta_2))
-                amplitude_test = np.concatenate((X_1_new,X_2_new,pre_amplitude_test[-s_len:,:]))
+                amplitude_test, angle_test = wav2spec(testfile)
+
+                # testfile = self.test_files[random.randint(0, (len(self.test_files) - 1))]
+                # pre_amplitude_test, angle_test = wav2spec(testfile)
+                # seq_len = 256
+                # s_len = pre_amplitude_test.shape[0] //3
+                # X_1 = pre_amplitude_test[:s_len,:]
+                # X_2 = pre_amplitude_test[s_len:s_len*2,:]
+                # theta_1 = angle_test[:s_len,:]
+                # theta_2 = angle_test[s_len:s_len*2,:]
+                # theta_y = angle_test[-s_len:,:]
+                # X_1_new = X_1*(np.cos(theta_y-theta_1))
+                # X_2_new = X_2*(np.cos(theta_y-theta_2))
+                # amplitude_test = np.concatenate((X_1_new,X_2_new,pre_amplitude_test[-s_len:,:]))
 		#print(testfile)
             	#np.savetxt(os.path.basename(testfile)+"amplitude.csv", amplitude_test,fmt="%.3f", delimiter=",")
             	#np.savetxt(os.path.basename(testfile)+"angle.csv", angle_test,fmt="%.3f", delimiter=",")

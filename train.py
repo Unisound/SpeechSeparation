@@ -124,8 +124,7 @@ def main():
     	    inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
             inp_dict = create_inputdict(inputslist,args,speech_inputs_1,
                 speech_inputs_2,speech_inputs_mix)
-	    
-	    print("inp_dict is:",inp_dict)
+	   
 
             summ, loss_value,_= sess.run([summary,losses, apply_gradient_op], 
                 feed_dict=inp_dict)

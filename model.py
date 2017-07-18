@@ -149,16 +149,23 @@ class SpeechSeparation(object):
       speech_inputs_mix = []
       speech_inputs_1 = []
       speech_inputs_2 = []
-      padding = tf.Variable(
-          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
-              trainable=False ,
-              name="speech_batch_inputs",
-              dtype=tf.float32)
 
       for i in xrange(args.num_gpus):
-        speech_inputs_2.append(padding)
-        speech_inputs_1.append(padding)
-        speech_inputs_mix.append(padding)
+        speech_inputs_2.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_2_batch_inputs",
+              dtype=tf.float32))
+        speech_inputs_1.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_1_batch_inputs",
+              dtype=tf.float32))
+        speech_inputs_mix.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_mix_batch_inputs",
+              dtype=tf.float32))
 
       # Calculate the gradients for each model tower.
       with tf.variable_scope(tf.get_variable_scope()):
