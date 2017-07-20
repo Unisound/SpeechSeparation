@@ -14,4 +14,4 @@ python train.py \
         --batch_size=1 \
 	--optimizer=adam \
 	--num_gpus=1 \
-        --logdir=trylog
+        --logdir=afterlog

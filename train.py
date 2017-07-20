@@ -50,7 +50,10 @@ def train(directories,args):
 
     # need to modify net to include these
     out = net.initializer(net,args)
-    summary, output1, output2, speech_inputs_1, speech_inputs_2, speech_inputs_mix, losses,apply_gradient_op = out
+    summary, output1, output2, losses,apply_gradient_op = out
+    speech_inputs_1 = net.speech_inputs_1
+    speech_inputs_2 = net.speech_inputs_2 
+    speech_inputs_mix = net.speech_inputs_mix
 
     # Set up session
     tf_config = tf.ConfigProto(\
@@ -116,7 +119,7 @@ def train(directories,args):
 
             duration = time.time() - start_time
 
-            if (step<100):
+            if (step < 100):
                 log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step') \
                     %(step, loss_sum, duration)
                 logging.warning(log_str)

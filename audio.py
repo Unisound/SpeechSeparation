@@ -3,14 +3,10 @@ import os
 import random
 import re
 import threading
-
 import librosa
-import sys
 import numpy as np
 import tensorflow as tf
 import scipy
-
-
 
 def get_category_cardinality(files):
     id_reg_expression = re.compile(FILE_PATTERN)
@@ -26,12 +22,10 @@ def get_category_cardinality(files):
 
     return min_id, max_id
 
-
 def randomize_files(files):
     for file in files:
         file_index = random.randint(0, (len(files) - 1))
         yield files[file_index]
-
 
 def find_files(directory, pattern='*.wav'):
     '''Recursively finds all files matching the pattern.'''
@@ -41,8 +35,6 @@ def find_files(directory, pattern='*.wav'):
             files.append(os.path.join(root, filename))
     #print (files)
     return files
-
-
 
 def wav2spec(filename):
     fs= 16000
@@ -57,7 +49,6 @@ def wav2spec(filename):
     angle= np.angle(D)
     return amplitude,angle
 
-
 def mk_audio(output,angle,fs,filename):
     framelen= 512
     frameshift = 256
@@ -71,7 +62,6 @@ def mk_audio(output,angle,fs,filename):
     maxv = np.iinfo(np.int16).max
     librosa.output.write_wav(filename, (x_r * maxv).astype(np.int16), fs)
     return x_r
-
 
 def load_generic_audio(directory, sample_rate):
     '''Generator that yields audio waveforms from the directory.'''
@@ -91,7 +81,6 @@ def trim_silence(audio, threshold):
     # Note: indices can be an empty array, if the whole audio was silence.
     return audio[indices[0]:indices[-1]] if indices.size else audio[0:0]
 
-
 def not_all_have_id(files):
     ''' Return true iff any of the filenames does not conform to the pattern
         we require for determining the category id.'''
@@ -102,11 +91,9 @@ def not_all_have_id(files):
             return True
     return False
 
-
 class AudioReader(object):
     '''Generic background audio reader that preprocesses audio files
     and enqueues them into a TensorFlow queue.'''
-
     def __init__(self,
                  audio_dir,
                  audio_test_dir,
@@ -142,9 +129,6 @@ class AudioReader(object):
                                                 shapes=[()])
             self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
 
-        # TODO Find a better way to check this.
-        # Checking inside the AudioReader's thread makes it hard to terminate
-        # the execution of the script, so we do it in the constructor for now.
         files = find_files(audio_dir)
         print(audio_dir)
         if not files:
@@ -180,7 +164,6 @@ class AudioReader(object):
         stop = False
 
         while not stop:
-
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for amplitude, angle, trainfile in iterator:
                 if self.coord.should_stop():

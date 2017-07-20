@@ -129,6 +129,9 @@ class SpeechSeparation(object):
                  [single_cell() for _ in range(self.n_rnn)])
           self.b_cell = tf.contrib.rnn.MultiRNNCell(
                  [single_cell() for _ in range(self.n_rnn)])
+        self.speech_inputs_1 = []
+        self.speech_inputs_2 = []
+        self.speech_inputs_mix = []
 
     def initializer(self,net,args):
       # Create optimizer (default is Adam)
@@ -143,22 +146,19 @@ class SpeechSeparation(object):
 
       tower_grads = []
       losses = []
-      speech_inputs_mix = []
-      speech_inputs_1 = []
-      speech_inputs_2 = []
 
       for i in xrange(args.num_gpus):
-        speech_inputs_2.append(tf.Variable(
+        self.speech_inputs_2.append(tf.Variable(
           tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
               trainable=False ,
               name="speech_2_batch_inputs",
               dtype=tf.float32))
-        speech_inputs_1.append(tf.Variable(
+        self.speech_inputs_1.append(tf.Variable(
           tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
               trainable=False ,
               name="speech_1_batch_inputs",
               dtype=tf.float32))
-        speech_inputs_mix.append(tf.Variable(
+        self.speech_inputs_mix.append(tf.Variable(
           tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
               trainable=False ,
               name="speech_mix_batch_inputs",
@@ -173,9 +173,9 @@ class SpeechSeparation(object):
               print("Creating model On Gpu:%d." % (i))
               
               summary, loss, output1, output2 = net.loss_SampleRnn(
-                  speech_inputs_1[i],
-                  speech_inputs_2[i],
-                  speech_inputs_mix[i],
+                  self.speech_inputs_1[i],
+                  self.speech_inputs_2[i],
+                  self.speech_inputs_mix[i],
                   l2_regularization_strength=args.l2_regularization_strength)
               
               # Reuse variables for the nect tower.
@@ -208,5 +208,5 @@ class SpeechSeparation(object):
       apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step)
 
       return (summary,output1,output2,
-        speech_inputs_1,speech_inputs_2,speech_inputs_mix,
+  #      speech_inputs_1,speech_inputs_2,speech_inputs_mix,
         losses,apply_gradient_op)
