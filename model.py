@@ -5,22 +5,22 @@ from ops import optimizer_factory
 from utils import average_gradients
 
 class SpeechSeparation(object):
-    def _create_network_speechrnn(self,
-			speech_inputs_mix):
+    def _create_network_speechrnn(self, speech_inputs_mix):
         with tf.variable_scope('SEEPCH_RNN_LAYER'):
-          speech_outputs = []
+            speech_outputs = []
 
-          mlp1_weights = tf.get_variable(
-            "mlp1", [self.dim, self.dim], dtype=tf.float32)
-          mlp2_weights = tf.get_variable(
-            "mlp2", [self.dim, self.dim], dtype=tf.float32)
-          mlp3_weights = tf.get_variable(
-            "mlp3", [self.dim, self.num_of_frequency_points*2], dtype=tf.float32)
+            mlp1_weights = tf.get_variable( \
+              "mlp1", [self.dim, self.dim], dtype=tf.float32)
+            mlp2_weights = tf.get_variable( \
+              "mlp2", [self.dim, self.dim], dtype=tf.float32)
+            mlp3_weights = tf.get_variable( \
+              "mlp3", [self.dim, self.num_of_frequency_points*2], \
+              dtype=tf.float32)
 
-          with tf.variable_scope("SEEPCH_RNN"):
-	    input_list = tf.unstack(tf.transpose(speech_inputs_mix, perm=[1, 0, 2]), axis=0)
+        with tf.variable_scope("SEEPCH_RNN"):
+            input_list = tf.unstack(tf.transpose(speech_inputs_mix, perm=[1, 0, 2]), axis=0)
             fb_output, _, _ = tf.contrib.rnn.static_bidirectional_rnn(self.f_cell, self.b_cell,\
-		                        input_list, dtype=tf.float32, scope='bi_rnn')
+                            input_list, dtype=tf.float32, scope='bi_rnn')
             for speech_cell_output in fb_output: 
               out = math_ops.matmul(speech_cell_output, mlp1_weights)
               out = tf.nn.relu(out)
@@ -31,20 +31,17 @@ class SpeechSeparation(object):
               out = tf.nn.relu(out)
               speech_outputs.append(out)
 
-          final_speech_outputs = tf.stack(speech_outputs) 
-          final_speech_outputs = tf.transpose(final_speech_outputs, perm=[1, 0, 2])
-
-          return final_speech_outputs
-
+            final_speech_outputs = tf.stack(speech_outputs)
+            final_speech_outputs = tf.transpose(final_speech_outputs, perm=[1, 0, 2])
+        return final_speech_outputs
 
 
-    def loss_SampleRnn(self,speech_inputs_1,speech_inputs_2,
-	speech_inputs_mix,
-	l2_regularization_strength=None):
+    def loss_SampleRnn(self,speech_inputs_1,speech_inputs_2,speech_inputs_mix, \
+        l2_regularization_strength=None):
 
-	mask_num_steps = 256
+        mask_num_steps = 256
 
-	mask_outputs = self._create_network_speechrnn(speech_inputs_mix)
+        mask_outputs = self._create_network_speechrnn(speech_inputs_mix)
         mask_1,mask_2=tf.split(mask_outputs,2, 2)
         output1 = speech_inputs_mix * mask_1
         output2 = speech_inputs_mix * mask_2

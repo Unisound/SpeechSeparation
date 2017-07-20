@@ -16,17 +16,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-
-EPSILON = 0.001
-def main():
-    args = get_arguments()
-
-    try:
-        directories = validate_directories(args)
-    except ValueError as e:
-        print("Some arguments are wrong:")
-        print(str(e))
-        return
+def train(directories,args):
 
     logdir = directories['logdir']
     print ("logdir",logdir)
@@ -36,55 +26,44 @@ def main():
     # if the trained model is written into a location that's different from 
     # logdir.
     is_overwritten_training = logdir != restore_from
-
-
-    # Create coordinator.
+    
     coord = tf.train.Coordinator()
+    # create inputs
+    gc_enabled = args.gc_channels is not None
+    reader = AudioReader( \
+        args.data_dir, \
+        args.test_dir, \
+        coord, \
+        sample_rate=args.sample_rate, \
+        gc_enabled=gc_enabled)
+    audio_batch = reader.dequeue(args.batch_size)
 
-    # Load raw waveform from VCTK corpus.
-    with tf.name_scope('create_inputs'):
-        # Allow silence trimming to be skipped by specifying a threshold near
-        # zero.
-        silence_threshold = args.silence_threshold if args.silence_threshold > \
-                                                      EPSILON else None
-        gc_enabled = args.gc_channels is not None
-        reader = AudioReader(
-            args.data_dir,
-            args.test_dir,
-            coord,
-            sample_rate=args.sample_rate,
-            gc_enabled=gc_enabled,
-            sample_size=args.sample_size,
-            silence_threshold=silence_threshold)
-        audio_batch = reader.dequeue(args.batch_size)
 
-##########Create model and inputs#########
-    net =  SpeechSeparation(
-    batch_size=args.batch_size,
-    rnn_type=args.rnn_type,
-    dim=args.dim,
-    n_rnn=args.n_rnn,
-    seq_len=args.seq_len,
-    num_of_frequency_points=args.num_of_frequency_points)
+    # initialize model
+    net =  SpeechSeparation( \
+        batch_size=args.batch_size, \
+        rnn_type=args.rnn_type, \
+        dim=args.dim, \
+        n_rnn=args.n_rnn, \
+        seq_len=args.seq_len, \
+        num_of_frequency_points=args.num_of_frequency_points)
 
+    # need to modify net to include these
     out = net.initializer(net,args)
     summary, output1, output2, speech_inputs_1, speech_inputs_2, speech_inputs_mix, losses,apply_gradient_op = out
-
-    if args.l2_regularization_strength == 0:
-        args.l2_regularization_strength = None
-
 
     # Set up session
     tf_config = tf.ConfigProto(\
         # allow_soft_placement is set to True to build towers on GPU
         allow_soft_placement=True,\
         log_device_placement=False,\
-                inter_op_parallelism_threads = 1)
+        inter_op_parallelism_threads = 1)
     tf_config.gpu_options.allow_growth = True
     sess = tf.Session(config=tf_config)
 
     sess.run(tf.global_variables_initializer())
-
+    # Create coordinator.
+    
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
     writer.add_graph(tf.get_default_graph())
@@ -93,8 +72,13 @@ def main():
 
 
     # Saver for storing checkpoints of the model.
-    saver = tf.train.Saver(var_list=tf.trainable_variables(), 
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), \
         max_to_keep=args.max_checkpoints)
+
+
+
+    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    reader.start_threads(sess)
 
     try:
         saved_global_step = load(saver, sess, restore_from)
@@ -110,21 +94,17 @@ def main():
         raise
 
 
-    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    reader.start_threads(sess)
-
-    step = None
+############################Start Training############################
     last_saved_step = saved_global_step
     try:
-        loss_sum = 0;
         for step in range(saved_global_step + 1, args.num_steps):
             loss_sum = 0
             start_time = time.time()
 
-    	    inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
+            inputslist = [sess.run(audio_batch) for i in xrange(args.num_gpus)]
             inp_dict = create_inputdict(inputslist,args,speech_inputs_1,
                 speech_inputs_2,speech_inputs_mix)
-	   
+       
 
             summ, loss_value,_= sess.run([summary,losses, apply_gradient_op], 
                 feed_dict=inp_dict)
@@ -136,14 +116,14 @@ def main():
 
             duration = time.time() - start_time
 
-            if(step<100):
+            if (step<100):
                 log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step') \
-                  %(step, loss_sum, duration)
+                    %(step, loss_sum, duration)
                 logging.warning(log_str)
 
-            elif(0==step % 100):
+            elif (0==step % 100):
                 log_str = ('step {%d} - loss = {%0.3f}, ({%0.3f} sec/step') \
-                  %(step, loss_sum/100, duration)
+                    %(step, loss_sum/100, duration)
                 logging.warning(log_str)
 
             if (0==step % 2000):
@@ -151,16 +131,17 @@ def main():
                     speech_inputs_1, speech_inputs_2, speech_inputs_mix, 
                       test=True)
 
-                outp1,outp2 = sess.run([output1,output2], feed_dict=inp_dict)
-                x_r = mk_audio(outp1,angle_test,args.sample_rate,
+                outp1, outp2 = sess.run([output1,output2], feed_dict=inp_dict)
+                x_r = mk_audio(outp1,angle_test,args.sample_rate, \
                         "spk1_test_"+str(step)+".wav")
-                y_r = mk_audio(outp2,angle_test,args.sample_rate,
+                y_r = mk_audio(outp2,angle_test,args.sample_rate, \
                         "spk2_test_"+str(step)+".wav")
 
-                outp2=inputslist[0][2]
-                angle2=inputslist[0][3]              
-                mk_audio(outp2,angle2,args.sample_rate,
+                amplitude_test = inputslist[0][2]
+                angle_test = inputslist[0][3]              
+                mk_audio(amplitude_test, angle_test, args.sample_rate, \
                     "raw_test_"+str(step)+".wav")
+                # audio summary on tensorboard
                 merged = sess.run(tf.summary.merge(
                     [tf.summary.audio('speaker1_' + str(step), x_r[None, :], 
                         args.sample_rate, max_outputs=1),
@@ -186,6 +167,23 @@ def main():
         coord.join(threads)
 
 
+def main():
+    args = get_arguments()
+
+    try:
+        directories = validate_directories(args)
+    except ValueError as e:
+        print("Some arguments are wrong:")
+        print(str(e))
+        return
+
+    if args.l2_regularization_strength == 0:
+        args.l2_regularization_strength = None
+
+    train(directories,args)
+
+    return
+
+##############################################################
 if __name__ == '__main__':
     main()
-

@@ -233,6 +233,8 @@ def create_inputdict(inputslist,args,speech_1,speech_2,speech_mix,test=False):
     s_len=inputslist[0][0].shape[1]/3
     seq_len=args.seq_len
 
+    # only take seq_len of a single speaker
+
     if test:
         inp_dict[speech_1[0]] = inputslist[0][2][:,:seq_len,:]
         inp_dict[speech_2[0]] = inputslist[0][2][:,s_len:s_len+seq_len,:]

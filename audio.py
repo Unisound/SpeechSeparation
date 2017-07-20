@@ -133,8 +133,8 @@ class AudioReader(object):
                         ['float32','float32','float32','float32'],
                         shapes=[(None, None),(None,None),(None,None),(None,None)])
         self.enqueue = self.queue.enqueue(\
-		[self.sample_placeholder, self.angle_placeholder,\
-		 self.sample_test_placeholder, self.angle_test_placeholder])
+        [self.sample_placeholder, self.angle_placeholder,\
+         self.sample_test_placeholder, self.angle_test_placeholder])
 
         if self.gc_enabled:
             self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
@@ -178,14 +178,7 @@ class AudioReader(object):
 
     def thread_main(self, sess):
         stop = False
-        # Go through the dataset multiple times
-        #audio_list = []
-        #iterator = load_generic_audio(self.audio_dir, self.sample_rate)
-        #for audio in iterator:
-        #  audio_list.append(audio)
-        #print(type(audio_list))
-        #print(type(audio_list[0]))
-        #print(type(audio_list[0][0]))
+
         while not stop:
 
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
@@ -208,13 +201,13 @@ class AudioReader(object):
                 # X_1_new = X_1*(np.cos(theta_y-theta_1))
                 # X_2_new = X_2*(np.cos(theta_y-theta_2))
                 # amplitude_test = np.concatenate((X_1_new,X_2_new,pre_amplitude_test[-s_len:,:]))
-		#print(testfile)
-            	#np.savetxt(os.path.basename(testfile)+"amplitude.csv", amplitude_test,fmt="%.3f", delimiter=",")
-            	#np.savetxt(os.path.basename(testfile)+"angle.csv", angle_test,fmt="%.3f", delimiter=",")
+        #print(testfile)
+                #np.savetxt(os.path.basename(testfile)+"amplitude.csv", amplitude_test,fmt="%.3f", delimiter=",")
+                #np.savetxt(os.path.basename(testfile)+"angle.csv", angle_test,fmt="%.3f", delimiter=",")
 
-		#print(trainfile + "train")
-            	#np.savetxt(os.path.basename(trainfile)+"-train-amplitude.csv", amplitude,fmt="%.3f", delimiter=",")
-            	#np.savetxt(os.path.basename(trainfile)+"-train-angle.csv", angle,fmt="%.3f", delimiter=",")
+        #print(trainfile + "train")
+                #np.savetxt(os.path.basename(trainfile)+"-train-amplitude.csv", amplitude,fmt="%.3f", delimiter=",")
+                #np.savetxt(os.path.basename(trainfile)+"-train-angle.csv", angle,fmt="%.3f", delimiter=",")
                 sess.run(self.enqueue,
                   feed_dict={self.sample_placeholder: amplitude,
                              self.angle_placeholder: angle,
