@@ -5,23 +5,22 @@ from ops import optimizer_factory
 from utils import average_gradients
 
 class SpeechSeparation(object):
-    def _create_network_speechrnn(self,
-			num_steps,
-			speech_inputs_mix):
+    def _create_network_speechrnn(self, speech_inputs_mix):
         with tf.variable_scope('SEEPCH_RNN_LAYER'):
-          speech_outputs = []
+            speech_outputs = []
 
-          mlp1_weights = tf.get_variable(
-            "mlp1", [self.dim, self.dim], dtype=tf.float32)
-          mlp2_weights = tf.get_variable(
-            "mlp2", [self.dim, self.dim], dtype=tf.float32)
-          mlp3_weights = tf.get_variable(
-            "mlp3", [self.dim, self.num_of_frequency_points*2], dtype=tf.float32)
+            mlp1_weights = tf.get_variable( \
+              "mlp1", [self.dim, self.dim], dtype=tf.float32)
+            mlp2_weights = tf.get_variable( \
+              "mlp2", [self.dim, self.dim], dtype=tf.float32)
+            mlp3_weights = tf.get_variable( \
+              "mlp3", [self.dim, self.num_of_frequency_points*2], \
+              dtype=tf.float32)
 
-          with tf.variable_scope("SEEPCH_RNN"):
-	    input_list = tf.unstack(tf.transpose(speech_inputs_mix, perm=[1, 0, 2]), axis=0)
+        with tf.variable_scope("SEEPCH_RNN"):
+            input_list = tf.unstack(tf.transpose(speech_inputs_mix, perm=[1, 0, 2]), axis=0)
             fb_output, _, _ = tf.contrib.rnn.static_bidirectional_rnn(self.f_cell, self.b_cell,\
-		                        input_list, dtype=tf.float32, scope='bi_rnn')
+                            input_list, dtype=tf.float32, scope='bi_rnn')
             for speech_cell_output in fb_output: 
               out = math_ops.matmul(speech_cell_output, mlp1_weights)
               out = tf.nn.relu(out)
@@ -32,26 +31,25 @@ class SpeechSeparation(object):
               out = tf.nn.relu(out)
               speech_outputs.append(out)
 
-          final_speech_outputs = tf.stack(speech_outputs) 
-          final_speech_outputs = tf.transpose(final_speech_outputs, perm=[1, 0, 2])
-
-          return final_speech_outputs
-
+            final_speech_outputs = tf.stack(speech_outputs)
+            final_speech_outputs = tf.transpose(final_speech_outputs, perm=[1, 0, 2])
+        return final_speech_outputs
 
 
-    def loss_SampleRnn(self,speech_inputs_1,speech_inputs_2,
-	speech_inputs_mix,
-	l2_regularization_strength=None):
+    def loss_SampleRnn(self,speech_inputs_1,speech_inputs_2,speech_inputs_mix, \
+        l2_regularization_strength=None):
 
-	mask_num_steps = 256
+        mask_num_steps = 256
 
-	mask_outputs = self._create_network_speechrnn(mask_num_steps, speech_inputs_mix)
+        mask_outputs = self._create_network_speechrnn(speech_inputs_mix)
         mask_1,mask_2=tf.split(mask_outputs,2, 2)
         output1 = speech_inputs_mix * mask_1
         output2 = speech_inputs_mix * mask_2
+        tmp = output1
 
         with tf.name_scope('loss'):
             #mask_num_steps = self.num_of_frequency_points-1
+            # only take 1 frame
             mask_num_steps = 256
             target_1    =tf.reshape(speech_inputs_1, [self.batch_size*mask_num_steps, -1])
             target_2    =tf.reshape(speech_inputs_2, [self.batch_size*mask_num_steps, -1])
@@ -60,13 +58,30 @@ class SpeechSeparation(object):
 
             loss_1 = tf.losses.mean_squared_error(labels=target_1, predictions=prediction_1) 
             loss_2 = tf.losses.mean_squared_error(labels=target_2, predictions=prediction_2) 
+
+            loss_3 = tf.losses.mean_squared_error(labels=target_2, predictions=prediction_1) 
+            loss_4 = tf.losses.mean_squared_error(labels=target_1, predictions=prediction_2) 
              
             reduced_loss_1 = tf.reduce_mean(loss_1)
             reduced_loss_2 = tf.reduce_mean(loss_2)
             reduced_loss =reduced_loss_1+reduced_loss_2
+            #reduced_loss_a =reduced_loss_1+reduced_loss_2
+
+            #reduced_loss_3 = tf.reduce_mean(loss_3)
+            #reduced_loss_4 = tf.reduce_mean(loss_4)
+            #reduced_loss_b =reduced_loss_3+reduced_loss_4
+
+            #reduced_loss = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: reduced_loss_b, lambda: reduced_loss_a)  
+            #output1 = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: output2, lambda: output1)  
+            #output2 = tf.cond(tf.less(reduced_loss_b, reduced_loss_a), 
+            #lambda: tmp, lambda: output2) 
+            #reduced_loss = tf.Print(reduced_loss,[reduced_loss,reduced_loss_a,reduced_loss_b],
+            #  message="The losses are:")
 
             if l2_regularization_strength is None:
-                summary = tf.summary.scalar('reduced_loss', reduced_loss)
+                summary = tf.summary.scalar('loss', reduced_loss)
                 return summary, reduced_loss , output1,output2
             else:
                 # L2 regularization for all trainable parameters
@@ -78,7 +93,7 @@ class SpeechSeparation(object):
                 total_loss = (reduced_loss +
                               l2_regularization_strength * l2_loss)
 
-                summary = tf.summary.scalar('total_loss', total_loss)
+                summary = tf.summary.scalar('loss', total_loss)
 
                 return summary, total_loss, output1,output2
 
@@ -114,6 +129,9 @@ class SpeechSeparation(object):
                  [single_cell() for _ in range(self.n_rnn)])
           self.b_cell = tf.contrib.rnn.MultiRNNCell(
                  [single_cell() for _ in range(self.n_rnn)])
+        self.speech_inputs_1 = []
+        self.speech_inputs_2 = []
+        self.speech_inputs_mix = []
 
     def initializer(self,net,args):
       # Create optimizer (default is Adam)
@@ -128,19 +146,23 @@ class SpeechSeparation(object):
 
       tower_grads = []
       losses = []
-      speech_inputs_mix = []
-      speech_inputs_1 = []
-      speech_inputs_2 = []
-      padding = tf.Variable(
-          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
-              trainable=False ,
-              name="speech_batch_inputs",
-              dtype=tf.float32)
 
       for i in xrange(args.num_gpus):
-        speech_inputs_2.append(padding)
-        speech_inputs_1.append(padding)
-        speech_inputs_mix.append(padding)
+        self.speech_inputs_2.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_2_batch_inputs",
+              dtype=tf.float32))
+        self.speech_inputs_1.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_1_batch_inputs",
+              dtype=tf.float32))
+        self.speech_inputs_mix.append(tf.Variable(
+          tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]),
+              trainable=False ,
+              name="speech_mix_batch_inputs",
+              dtype=tf.float32))
 
       # Calculate the gradients for each model tower.
       with tf.variable_scope(tf.get_variable_scope()):
@@ -151,9 +173,9 @@ class SpeechSeparation(object):
               print("Creating model On Gpu:%d." % (i))
               
               summary, loss, output1, output2 = net.loss_SampleRnn(
-                  speech_inputs_1[i],
-                  speech_inputs_2[i],
-                  speech_inputs_mix[i],
+                  self.speech_inputs_1[i],
+                  self.speech_inputs_2[i],
+                  self.speech_inputs_mix[i],
                   l2_regularization_strength=args.l2_regularization_strength)
               
               # Reuse variables for the nect tower.
@@ -186,5 +208,5 @@ class SpeechSeparation(object):
       apply_gradient_op = optim.apply_gradients(grad_vars, global_step=global_step)
 
       return (summary,output1,output2,
-        speech_inputs_1,speech_inputs_2,speech_inputs_mix,
+  #      speech_inputs_1,speech_inputs_2,speech_inputs_mix,
         losses,apply_gradient_op)

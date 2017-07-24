@@ -13,14 +13,45 @@ import json
 import os
 import sys
 import time
-
+import librosa
 import logging
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import timeline
 import ctypes
 import scipy
+def stft(x, fs, framesz, hop):
+    """
+     x - signal
+     fs - sample rate
+     framesz - frame size
+     hop - hop size (frame size = overlap + hop size)
+    """
+    audio=np.reshape(x, (-1))
+    framesamp = int(framesz*fs)
+    hopsamp = int(hop*fs)
+    w = scipy.hamming(framesamp)
+    X = scipy.array([scipy.fftpack.fft(w*audio[i:i+framesamp]) 
+                     for i in range(0, len(x)-framesamp, hopsamp)])
+    return X, X[:,:X.shape[1]/2+1]
 
+def istft(X, fs, T, hop):
+    #x = scipy.zeros(T*fs)
+    x = scipy.zeros(T)
+    framesamp = X.shape[1]
+    hopsamp = int(hop*fs)
+    for n,i in enumerate(range(0, len(x)-framesamp, hopsamp)):
+        x[i:i+framesamp] += scipy.real(scipy.fftpack.ifft(X[n]))
+    return x
+
+def irstft(X, fs, T, hop):
+    #x = scipy.zeros(T*fs)
+    x = scipy.zeros(T)
+    framesamp = X.shape[1]
+    hopsamp = int(hop*fs)
+    for n,i in enumerate(range(0, len(x)-framesamp, hopsamp)):
+        x[i:i+framesamp] += scipy.real(scipy.fftpack.irfft(X[n]))
+    return x
 # an audio-making function
 def mk_audio(output,output_angle,num):
     fs= 16000
@@ -36,9 +67,9 @@ def mk_audio(output,output_angle,num):
     scipy.io.wavfile.write("speeker"+str(num)+"_test.wav", fs, x_r)
     return
 
-from speech_separation import cosSimilar,stft,istft
-from speech_separation import SpeechSeparation, AudioReader
-from speech_separation import mu_law_decode, optimizer_factory
+from model import SpeechSeparation
+from audio import AudioReader
+from ops import optimizer_factory
 
 # hyper parameters
 NUM_OF_FREQUENCY_POINTS = 257
@@ -175,21 +206,13 @@ def get_arguments():
     '''
     parser.add_argument('--seq_len', help='How many samples to include in each\
             Truncated BPTT pass', type=check_positive, required=True)
-    parser.add_argument('--big_frame_size', help='How many samples per big frame',\
-            type=check_positive, required=True)
-    parser.add_argument('--frame_size', help='How many samples per frame',\
-            type=check_positive, required=True)
-    parser.add_argument('--q_levels', help='Number of bins for quantization of\
-            audio samples. Should be 256 for mu-law.',\
-            type=check_positive, required=True)
     parser.add_argument('--rnn_type', help='GRU or LSTM', choices=['LSTM', 'GRU'],\
             required=True)
     parser.add_argument('--dim', help='Dimension of RNN and MLPs',\
             type=check_positive, required=True)
     parser.add_argument('--n_rnn', help='Number of layers in the stacked RNN',
             type=check_positive, choices=xrange(1,6), required=True)
-    parser.add_argument('--emb_size', help='Size of embedding layer (> 0)',
-            type=check_positive, required=True)  # different than two_tier
+    return parser.parse_args()
 ###############SAMPLE_RNN################
     return parser.parse_args()
 
@@ -276,18 +299,13 @@ def validate_directories(args):
 
 def create_model(args):
   # Create network.
-  net = SpeechSeparation(
-    batch_size=args.batch_size,
-    big_frame_size=args.big_frame_size,
-    frame_size=args.frame_size,
-    q_levels=args.q_levels,
-    rnn_type=args.rnn_type,
-    dim=args.dim,
-    n_rnn=args.n_rnn,
-    seq_len=args.seq_len,
-    num_of_frequency_points=args.num_of_frequency_points,
-    emb_size=args.emb_size)
-  return net 
+    net =  SpeechSeparation(batch_size=args.batch_size, \
+    rnn_type=args.rnn_type, \
+    dim=args.dim, \
+    n_rnn=args.n_rnn, \
+    seq_len=args.seq_len, \
+    num_of_frequency_points=args.num_of_frequency_points)
+    return net 
 
 
 
@@ -384,12 +402,7 @@ def main():
     speech_inputs_mix = []
     speech_inputs_1 = []
     speech_inputs_2 = []
-    speech_state = []
-    train_input_batch_rnn = []
-    train_big_frame_state = []
-    train_frame_state = []
-    final_big_frame_state = []
-    final_frame_state = []
+
     for i in xrange(args.num_gpus):
       speech_inputs_2.append(tf.Variable(
                 tf.zeros([net.batch_size, net.seq_len,args.num_of_frequency_points]), 
@@ -406,17 +419,7 @@ def main():
                         trainable=False , 
                 name="speech_batch_inputs",
                 dtype=tf.float32))
-      train_input_batch_rnn.append(tf.Variable(
-                tf.zeros([net.batch_size, net.seq_len,1]), 
-                        trainable=False , 
-                name="input_batch_rnn",
-                dtype=tf.float32))
-      speech_state.append(net.cell.zero_state(net.batch_size, tf.float32))
-      train_big_frame_state.append(net.cell.zero_state(net.batch_size, tf.float32))
-      train_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
-      final_big_frame_state.append(net.cell.zero_state(net.batch_size, tf.float32))
-      final_frame_state.append    (net.cell.zero_state(net.batch_size, tf.float32))
-    
+ 
     with tf.variable_scope(tf.get_variable_scope()):
       for i in xrange(args.num_gpus):
         with tf.device('/gpu:%d' % i):
@@ -427,10 +430,6 @@ def main():
                 speech_inputs_1[i],
                 speech_inputs_2[i],
                 speech_inputs_mix[i],
-            speech_state[i],
-                train_input_batch_rnn[i],
-                train_big_frame_state[i],
-                train_frame_state[i],
                         l2_regularization_strength=args.l2_regularization_strength)
             
             # Reuse variables for the nect tower.
